@@ -106,6 +106,34 @@ debug_log.md      # 实际调试记录
 logs/             # 实验日志模板
 ```
 
+## FID≤15 v2 严格 200 epoch 实验
+
+为保持和作业协议一致，本轮每个变体固定运行 200 epoch、约 78,000 次有效更新、seed 44，
+并把输出写入互不覆盖的目录：
+
+- `configs/cifar10_fid15_full_linear_default.yaml`：完整 DDPM U-Net + linear schedule + warmup 后固定学习率；
+- `configs/cifar10_fid15_full_linear_cosinelr.yaml`：完整 DDPM U-Net + linear schedule + warmup 后 cosine 学习率衰减；
+- `configs/cifar10_fid15_full_cosine_default.yaml`：完整 DDPM U-Net + 修正后的 cosine schedule + warmup 后固定学习率。
+
+每个运行同时保存 EMA decay `0.999、0.9995、0.9999`，以便在相同 checkpoint 上比较 EMA；
+`diagnose_schedule.py` 可记录反向采样中的 `pred_x0` 越界比例和各时间步幅值。
+
+AutoDL 上可用 `run_fid15_v2.sh` 按顺序运行三个实验。训练期间启动只读多实验监控：
+
+```bash
+python -u experiment_monitor.py \
+  --run R1=runs/fid15_v2_full_linear_default \
+  --run R2=runs/fid15_v2_full_linear_cosinelr \
+  --run R3=runs/fid15_v2_full_cosine_default \
+  --total-steps 78000 \
+  --pid-file runs/fid15_v2_runner.pid \
+  --log-path logs/fid15_v2_runner.log \
+  --host 127.0.0.1 --port 8765
+```
+
+本页面每 2 秒刷新，训练结束后只读显示最终 checkpoint；本轮实际 FID、耗时和样本结果
+须以 AutoDL 运行产生的文件为准，未运行前不预填实验数值。
+
 ## 核心公式
 
 前向过程使用闭合形式：

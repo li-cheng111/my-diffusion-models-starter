@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 import torch
 import torch.nn.functional as F
@@ -77,6 +77,7 @@ def p_sample(
     t: torch.Tensor,
     schedule: DDPMSchedule,
     clip_denoised: bool = False,
+    diagnostics: Optional[dict[str, Any]] = None,
 ) -> torch.Tensor:
     """Perform one stochastic reverse step x_t -> x_{t-1}."""
 
@@ -98,7 +99,8 @@ def p_sample(
         schedule.sqrt_one_minus_alphas_cumprod, t, xt.shape
     )
 
-    if clip_denoised:
+    pred_x0 = None
+    if clip_denoised or diagnostics is not None:
         # Convert epsilon prediction to x_0, constrain it to the data range,
         # and then use q(x_{t-1} | x_t, x_0) for the reverse mean. The noisy
         # state xt is intentionally not clipped.
@@ -107,7 +109,22 @@ def p_sample(
         pred_x0 = (
             torch.rsqrt(alpha_bar_t) * xt
             - torch.sqrt(1.0 / alpha_bar_t - 1.0) * predicted_noise
-        ).clamp(-1.0, 1.0)
+        )
+        if diagnostics is not None:
+            diagnostics.setdefault("steps", []).append(
+                {
+                    "t": int(t[0].item()),
+                    "xt_abs_max": float(xt.detach().abs().max().cpu()),
+                    "pred_x0_abs_max": float(pred_x0.detach().abs().max().cpu()),
+                    "pred_x0_outside_fraction": float(
+                        (pred_x0.detach().abs() > 1.0).float().mean().cpu()
+                    ),
+                    "pred_noise_abs_max": float(predicted_noise.detach().abs().max().cpu()),
+                }
+            )
+        if clip_denoised:
+            pred_x0 = pred_x0.clamp(-1.0, 1.0)
+    if clip_denoised:
         posterior_mean_coef1 = beta_t * torch.sqrt(alpha_bar_prev_t) / (1.0 - alpha_bar_t)
         posterior_mean_coef2 = (
             _extract(schedule.alphas, t, xt.shape).sqrt()
@@ -133,6 +150,7 @@ def p_sample_loop(
     schedule: DDPMSchedule,
     device: Optional[torch.device] = None,
     clip_denoised: bool = False,
+    diagnostics: Optional[dict[str, Any]] = None,
 ) -> torch.Tensor:
     """Generate a batch by applying all T reverse steps."""
 
@@ -143,5 +161,12 @@ def p_sample_loop(
     x = torch.randn(tuple(shape), device=device)
     for step in reversed(range(schedule.T)):
         t = torch.full((shape[0],), step, device=device, dtype=torch.long)
-        x = p_sample(model, x, t, schedule, clip_denoised=clip_denoised)
+        x = p_sample(
+            model,
+            x,
+            t,
+            schedule,
+            clip_denoised=clip_denoised,
+            diagnostics=diagnostics,
+        )
     return x

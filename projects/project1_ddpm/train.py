@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import math
+import random
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -55,6 +57,61 @@ class EMA:
             self.ema_model.load_state_dict(state)
 
 
+class EMABank:
+    """Maintain several EMA copies in one training run."""
+
+    def __init__(self, model: torch.nn.Module, decays: list[float] | tuple[float, ...]) -> None:
+        values = tuple(sorted({float(decay) for decay in decays}))
+        if not values or any(not 0.0 < decay < 1.0 for decay in values):
+            raise ValueError("ema_decays must contain values strictly between 0 and 1")
+        self.decays = values
+        self.models = [copy.deepcopy(model) for _ in values]
+        for shadow in self.models:
+            for parameter in shadow.parameters():
+                parameter.requires_grad_(False)
+
+    @torch.no_grad()
+    def update(self, model: torch.nn.Module) -> None:
+        for decay, shadow in zip(self.decays, self.models):
+            for shadow_parameter, parameter in zip(shadow.parameters(), model.parameters()):
+                shadow_parameter.mul_(decay).add_(parameter.detach(), alpha=1.0 - decay)
+            for shadow_buffer, buffer in zip(shadow.buffers(), model.buffers()):
+                shadow_buffer.copy_(buffer)
+
+    def primary_model(self) -> torch.nn.Module:
+        return self.models[-1]
+
+    def model_for_decay(self, decay: float) -> torch.nn.Module:
+        target = float(decay)
+        for configured, shadow in zip(self.decays, self.models):
+            if math.isclose(configured, target, rel_tol=0.0, abs_tol=1e-8):
+                return shadow
+        available = ", ".join(f"{item:.6g}" for item in self.decays)
+        raise ValueError(f"EMA decay {target} is unavailable; choices: {available}")
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {
+            "decays": list(self.decays),
+            "models": [shadow.state_dict() for shadow in self.models],
+        }
+
+    def load_state_dict(self, state: Dict[str, Any]) -> None:
+        if "models" in state:
+            saved_decays = [float(value) for value in state.get("decays", self.decays)]
+            if tuple(saved_decays) != self.decays:
+                raise ValueError(
+                    f"EMA decay mismatch: checkpoint={saved_decays}, config={list(self.decays)}"
+                )
+            for shadow, shadow_state in zip(self.models, state["models"]):
+                shadow.load_state_dict(shadow_state)
+            return
+        # Backward compatibility: initialize every requested decay from a
+        # legacy single EMA state when architectures are otherwise compatible.
+        legacy = state.get("model", state)
+        for shadow in self.models:
+            shadow.load_state_dict(legacy)
+
+
 def _set_seed(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -66,7 +123,15 @@ def _save_loss_history(history: list[Dict[str, float]], output_dir: Path) -> Non
     with csv_path.open("w", newline="") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["step", "epoch", "loss", "lr", "optimizer_step_skipped"],
+            fieldnames=[
+                "step",
+                "attempt_step",
+                "epoch",
+                "loss",
+                "lr",
+                "grad_norm",
+                "optimizer_step_skipped",
+            ],
         )
         writer.writeheader()
         writer.writerows(history)
@@ -95,7 +160,7 @@ def _save_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     lr_scheduler: Optional[torch.optim.lr_scheduler.LambdaLR],
-    ema: Optional[EMA],
+    ema: Optional[Any],
     scaler: GradScaler,
     cfg: Dict[str, Any],
     epoch: int,
@@ -118,6 +183,31 @@ def _save_checkpoint(
     if resume_schedule_origin_step is not None:
         state["resume_schedule_origin_step"] = resume_schedule_origin_step
     torch.save(state, path)
+
+
+def _lr_for_update(cfg: Dict[str, Any], step: int) -> float:
+    """Return the learning rate used for a zero-based successful update."""
+
+    optimizer_cfg = cfg["optimizer"]
+    base_lr = float(optimizer_cfg["lr"])
+    warmup_steps = max(0, int(optimizer_cfg.get("warmup_steps", 0)))
+    schedule_name = str(optimizer_cfg.get("lr_schedule", "warmup_constant")).lower()
+    if warmup_steps and step < warmup_steps:
+        return base_lr * (step + 1) / warmup_steps
+    if schedule_name in {"constant", "warmup_constant"}:
+        return base_lr
+    if schedule_name != "warmup_cosine":
+        raise ValueError(
+            "optimizer.lr_schedule must be 'constant', 'warmup_constant', or 'warmup_cosine'"
+        )
+    total_steps = int(cfg["training"].get("max_steps", 0))
+    if total_steps <= warmup_steps:
+        raise ValueError("training.max_steps must be greater than warmup_steps for warmup_cosine")
+    min_lr = float(optimizer_cfg.get("min_lr", 0.0))
+    if not 0.0 <= min_lr <= base_lr:
+        raise ValueError("optimizer.min_lr must satisfy 0 <= min_lr <= optimizer.lr")
+    progress = min(max((step - warmup_steps) / max(total_steps - warmup_steps - 1, 1), 0.0), 1.0)
+    return min_lr + 0.5 * (base_lr - min_lr) * (1.0 + math.cos(math.pi * progress))
 
 
 def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
@@ -148,15 +238,20 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
     )
 
     resume_lr_cfg = cfg.get("resume_lr_schedule")
+    explicit_lr_schedule = resume_lr_cfg is not None or "lr_schedule" in cfg["optimizer"]
     warmup_steps = int(cfg["optimizer"].get("warmup_steps", 0))
     lr_scheduler = None
-    if warmup_steps > 0 and resume_lr_cfg is None:
+    if warmup_steps > 0 and not explicit_lr_schedule:
         lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer, lambda step: min((step + 1) / warmup_steps, 1.0)
         )
 
-    ema_decay = float(cfg.get("ema_decay", 0.0))
-    ema = EMA(model, ema_decay) if ema_decay > 0 else None
+    ema_decays_cfg = cfg.get("ema_decays")
+    if ema_decays_cfg is not None:
+        ema = EMABank(model, [float(value) for value in ema_decays_cfg])
+    else:
+        ema_decay = float(cfg.get("ema_decay", 0.0))
+        ema = EMA(model, ema_decay) if ema_decay > 0 else None
     precision = cfg.get("mixed_precision", "no")
     use_amp = precision in {"fp16", "bf16"} and device.type == "cuda"
     amp_dtype = torch.bfloat16 if precision == "bf16" else torch.float16
@@ -244,25 +339,46 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                     1.0,
                 )
                 lr_for_update = end_lr + (start_lr - end_lr) * 0.5 * (
-                    1.0 + torch.cos(torch.tensor(progress * torch.pi)).item()
+                    1.0 + math.cos(progress * math.pi)
                 )
+                for group in optimizer.param_groups:
+                    group["lr"] = lr_for_update
+            elif explicit_lr_schedule:
+                lr_for_update = _lr_for_update(cfg, global_step)
                 for group in optimizer.param_groups:
                     group["lr"] = lr_for_update
 
             skipped = False
+            grad_norm = 0.0
             if scaler.is_enabled():
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip))
                 old_scale = scaler.get_scale()
                 scaler.step(optimizer)
                 scaler.update()
                 skipped = scaler.get_scale() < old_scale
             else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip))
                 optimizer.step()
             if skipped:
                 # A GradScaler overflow did not produce an optimizer update;
                 # do not advance the schedule, EMA, or effective step count.
+                history.append(
+                    {
+                        "step": float(global_step),
+                        "attempt_step": float(micro_step),
+                        "epoch": float(epoch),
+                        "loss": float((loss * grad_accum_steps).detach().cpu()),
+                        "lr": float(optimizer.param_groups[0]["lr"]),
+                        "grad_norm": grad_norm,
+                        "optimizer_step_skipped": 1.0,
+                    }
+                )
+                print(
+                    f"[epoch {epoch:03d} attempt {micro_step:06d}] "
+                    f"optimizer step skipped; scaler={scaler.get_scale():.1f}",
+                    flush=True,
+                )
                 optimizer.zero_grad(set_to_none=True)
                 continue
             if lr_scheduler is not None:
@@ -275,9 +391,11 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
             lr_now = float(optimizer.param_groups[0]["lr"])
             row = {
                 "step": float(global_step),
+                "attempt_step": float(micro_step),
                 "epoch": float(epoch),
                 "loss": float((loss * grad_accum_steps).detach().cpu()),
                 "lr": lr_now,
+                "grad_norm": grad_norm,
                 "optimizer_step_skipped": float(skipped),
             }
             history.append(row)
@@ -290,7 +408,10 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                     wandb.log({"loss": row["loss"], "lr": lr_now}, step=global_step)
 
             if sample_every > 0 and global_step % sample_every == 0:
-                sample_model = ema.ema_model if ema is not None else model
+                if isinstance(ema, EMABank):
+                    sample_model = ema.primary_model()
+                else:
+                    sample_model = ema.ema_model if ema is not None else model
                 was_training = sample_model.training
                 sample_model.eval()
                 samples = p_sample_loop(

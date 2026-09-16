@@ -80,6 +80,7 @@ def _load_model(
     checkpoint: dict,
     use_ema: bool,
     device: torch.device,
+    ema_decay: float | None = None,
 ) -> tuple[torch.nn.Module, DDPMSchedule, dict, str]:
     """Create an evaluator model from either raw or EMA checkpoint weights."""
 
@@ -90,8 +91,20 @@ def _load_model(
         if "ema" not in checkpoint:
             raise ValueError("The checkpoint does not contain EMA weights.")
         ema_state = checkpoint["ema"]
-        model.load_state_dict(ema_state.get("model", ema_state))
-        weight_type = "EMA"
+        if "models" in ema_state:
+            decays = [float(value) for value in ema_state["decays"]]
+            target = max(decays) if ema_decay is None else float(ema_decay)
+            candidates = [index for index, value in enumerate(decays) if abs(value - target) <= 1e-8]
+            if not candidates:
+                available = ", ".join(f"{value:.6g}" for value in decays)
+                raise ValueError(f"EMA decay {target} is unavailable; choices: {available}")
+            model.load_state_dict(ema_state["models"][candidates[0]])
+            weight_type = f"EMA_{decays[candidates[0]]:.4f}"
+        else:
+            if ema_decay is not None:
+                raise ValueError("The checkpoint contains only one legacy EMA state.")
+            model.load_state_dict(ema_state.get("model", ema_state))
+            weight_type = "EMA"
     else:
         model.load_state_dict(checkpoint["model"])
         weight_type = "raw"
@@ -111,6 +124,12 @@ def main() -> None:
     parser.add_argument("--num_samples", type=int, default=5000)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--no_ema", action="store_true")
+    parser.add_argument(
+        "--ema_decay",
+        type=float,
+        default=None,
+        help="Select one EMA decay from a checkpoint containing an EMA bank.",
+    )
     parser.add_argument(
         "--compare_ema",
         action="store_true",
@@ -139,10 +158,17 @@ def main() -> None:
     in_channels = cfg["model"]["in_channels"]
     if args.compare_ema and args.no_ema:
         parser.error("--compare_ema and --no_ema cannot be used together")
+    if args.ema_decay is not None and args.no_ema:
+        parser.error("--ema_decay cannot be combined with --no_ema")
     if args.compare_ema:
-        weight_options = (True, False)
+        ema_state = checkpoint.get("ema", {})
+        if "models" in ema_state:
+            weight_options = [(True, float(value)) for value in ema_state["decays"]]
+        else:
+            weight_options = [(True, None)]
+        weight_options.append((False, None))
     else:
-        weight_options = (not args.no_ema,)
+        weight_options = [(not args.no_ema, args.ema_decay)]
 
     real_dataset = get_dataset(
         cfg["dataset"]["name"],
@@ -153,9 +179,11 @@ def main() -> None:
     )
 
     results = {}
-    for use_ema in weight_options:
+    for use_ema, ema_decay in weight_options:
         _seed_everything(args.seed)
-        model, schedule, _, weight_type = _load_model(checkpoint, use_ema, device)
+        model, schedule, _, weight_type = _load_model(
+            checkpoint, use_ema, device, ema_decay=ema_decay
+        )
         score = compute_fid(
             model,
             schedule,
@@ -181,13 +209,12 @@ def main() -> None:
         )
         print(f"FID @ {args.num_samples} samples ({weight_type}, real={args.real_split}): {score:.4f}")
 
-    if len(results) == 2:
+    if args.compare_ema and "raw" in results:
         clip_suffix = "_clipx0" if args.clip_denoised else "_noclipx0"
         comparison_path = Path(args.ckpt).parent / f"fid_comparison{clip_suffix}.md"
-        ema_score = results["EMA"]
         raw_score = results["raw"]
-        comparison_path.write_text(
-            "# CIFAR-10 EMA comparison\n\n"
+        lines = [
+            "# CIFAR-10 EMA comparison\n\n",
             f"- Real split: `{args.real_split}`\n"
             f"- Real samples: `{args.num_samples}`\n"
             f"- Generated samples per run: `{args.num_samples}`\n"
@@ -195,10 +222,13 @@ def main() -> None:
             f"- Clip predicted x0: `{args.clip_denoised}`\n\n"
             "| Weights | FID |\n"
             "|---|---:|\n"
-            f"| EMA | {ema_score:.4f} |\n"
-            f"| Raw | {raw_score:.4f} |\n"
-            f"| Raw - EMA | {raw_score - ema_score:+.4f} |\n"
-        )
+        ]
+        for weight_type, score in results.items():
+            lines.append(f"| {weight_type} | {score:.4f} |\n")
+        for weight_type, score in results.items():
+            if weight_type != "raw":
+                lines.append(f"| raw - {weight_type} | {raw_score - score:+.4f} |\n")
+        comparison_path.write_text("".join(lines))
         print(f"EMA comparison written to {comparison_path}")
 
 
