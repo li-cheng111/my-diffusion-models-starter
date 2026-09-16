@@ -16,6 +16,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 
 STEP_RE = re.compile(r"step[_-](\d+)")
+LOG_STEP_RE = re.compile(r"\[epoch\s+\d+\s+step\s+(\d+)\]\s+loss=([0-9.eE+-]+)\s+lr=([0-9.eE+-]+)")
+START_RE = re.compile(r"===== START (.+?) =====")
+END_RE = re.compile(r"===== END (.+?) =====")
 
 PAGE = r'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>DDPM FID 实验监控</title>
@@ -60,6 +63,36 @@ def _loss(path: Path, limit: int = 400) -> list[dict[str, Any]]:
         return []
 
 
+def _log_state(text: str, limit: int = 400) -> tuple[str | None, dict[str, list[dict[str, Any]]]]:
+    """Extract the active run and live training points from the runner log."""
+
+    current: str | None = None
+    points: dict[str, list[dict[str, Any]]] = {}
+    for line in text.splitlines():
+        start = START_RE.search(line)
+        if start:
+            current = start.group(1).strip()
+            points.setdefault(current, [])
+            continue
+        end = END_RE.search(line)
+        if end:
+            if current == end.group(1).strip():
+                current = None
+            continue
+        if current is None:
+            continue
+        match = LOG_STEP_RE.search(line)
+        if match:
+            points.setdefault(current, []).append(
+                {
+                    "step": float(match.group(1)),
+                    "loss": float(match.group(2)),
+                    "lr": float(match.group(3)),
+                }
+            )
+    return current, {label: rows[-limit:] for label, rows in points.items()}
+
+
 def _gpu() -> dict[str, str]:
     try:
         result = subprocess.run(
@@ -88,16 +121,25 @@ class Dashboard:
         self.log_path = log_path
 
     def snapshot(self) -> dict[str, Any]:
+        try:
+            log_text = self.log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            log_text = ""
+        active_label, live_loss = _log_state(log_text)
+        runner_alive = _pid_alive(self.pid_file)
         runs = []
         for spec in self.specs:
             ckpt = spec.path / "ckpt"
             loss = _loss(spec.path / "loss_history.csv")
+            logged_loss = live_loss.get(spec.label, [])
+            if logged_loss and (not loss or logged_loss[-1]["step"] >= loss[-1]["step"]):
+                loss = logged_loss
             steps = [int(row["step"]) for row in loss]
             steps.extend(_step(path) for path in ckpt.glob("step_*.pt"))
             steps.extend(_step(path) for path in (spec.path / "samples").glob("step_*.png"))
             final = (ckpt / "final.pt").exists()
             step = spec.total_steps if final else max(steps, default=0)
-            active = _pid_alive(self.pid_file) and not final
+            active = runner_alive and active_label == spec.label and not final
             status = "completed" if final else ("running" if active else ("stopped" if step else "pending"))
             latest = loss[-1] if loss else {}
             sample_paths = sorted((spec.path / "samples").glob("step_*.png"), key=_step)[-8:]
@@ -121,10 +163,7 @@ class Dashboard:
             current = next((run for run in runs if run["status"] == "pending"), None)
         total_steps = sum(spec.total_steps for spec in self.specs)
         completed_steps = sum(int(run["step"]) for run in runs)
-        try:
-            log = "\n".join(self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-24:])
-        except OSError:
-            log = ""
+        log = "\n".join(log_text.splitlines()[-24:])
         return {
             "status": "completed" if completed == len(runs) and runs else (current["status"] if current else "pending"),
             "status_label": "全部完成" if completed == len(runs) and runs else ("训练中" if current and current["status"] == "running" else "等待启动"),
