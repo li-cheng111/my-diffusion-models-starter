@@ -68,3 +68,22 @@
   训练异常。AutoDL 断联后重新登录，checkpoint、loss history 和评估结果均已保留。
 - 经验：评估脚本当前只在 5,000 张样本全部生成后写入 FID，因此实时监控应结合 screen、
   Python 进程和 GPU 利用率；不能把暂时为空的评估日志误判为卡死。
+
+## 条目 8——FID≤15 v2：R2 checkpoint 恢复与完整对照
+
+- 状态：训练、primary 评估和 EMA decay 对比均已完成；目标未达标，固定协议下最低 FID 为 EMA 0.9995 的 `15.5340`。
+- 实施：在 RTX 4090 上按严格 200 epoch 运行三个独立变体：完整 skip-connection U-Net、
+  linear/cosine beta 对照，以及 linear beta 的 cosine-LR 尾段；每组保存 EMA 0.999、0.9995、
+  0.9999，并以 seed44、5,000 对 5,000 train split 评估未裁剪和裁剪 x0。
+- 结果：R1 为 `18.8045/18.8144`，R2 为 `19.4615/19.4633`，R3 为
+  `162.8797/16.1686`（顺序均为未裁剪/裁剪）。primary 最好为 R3 裁剪的 `16.1686`。
+- 现象：R2 原始 `final.pt` 在前一次训练结束时因 AutoDL 数据盘空间不足而损坏；有效的
+  `step_070000.pt` 仍可加载。扩容后从该 checkpoint 恢复到 step `78000`，新 checkpoint
+  大小约 916 MB，并通过 `torch.load` 检查 `global_step=78000、epoch=200`。
+- 监控：AutoDL SSH 控制连接断开会使本地转发失效，但 detached screen 中的训练/评估通常
+  可以继续；本次曾发现 dead screen，随后重新启动监控服务。恢复训练期间监控还修正为优先
+  使用当前 runner 日志，避免旧 loss history 的末尾 step 遮住恢复进度。
+- 经验：cosine beta 的未裁剪反向采样会产生极端轨迹，逐步裁剪 x0 能把 FID 从 `162.8797`
+  降至 `16.1686`，但仍未达到 15；线性 beta 下裁剪影响约 `0.002`，cosine-LR 尾段也没有
+  带来收益。EMA 多 decay 对比显示 EMA 0.9995=`15.5340` 最优，仍比目标高 `0.5340`，
+  因此不能把 primary 的 EMA 0.9999 结果误认为本轮最优或达标。

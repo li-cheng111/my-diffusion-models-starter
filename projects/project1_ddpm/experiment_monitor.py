@@ -136,7 +136,10 @@ class Dashboard:
             loss_path = spec.path / "loss_history.csv"
             loss = _loss(loss_path)
             logged_loss = live_loss.get(spec.label, [])
-            if logged_loss and (not loss or logged_loss[-1]["step"] >= loss[-1]["step"]):
+            # A recovery run can append a fresh attempt after an older
+            # loss_history.csv stopped at a larger step.  While that attempt
+            # is active, its runner log is the authoritative live source.
+            if logged_loss and (active_label == spec.label or not loss or logged_loss[-1]["step"] >= loss[-1]["step"]):
                 loss = logged_loss
             steps = [int(row["step"]) for row in loss]
             steps.extend(_step(path) for path in ckpt.glob("step_*.pt"))

@@ -4,7 +4,7 @@
 
 ## 当前提交状态
 
-基础档 MNIST 实验和进阶档 CIFAR-10 单次实验均已在 AutoDL NVIDIA GeForce RTX 5090 上完成训练、采样和 FID 评估。挑战档的 linear/cosine × seed 42/43/44 六组 CIFAR-10 实验也已完成；小型结果和最终样本网格在仓库中，大型 checkpoint 与中间样本在 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)。
+基础档 MNIST 实验、进阶档 CIFAR-10 单次实验、挑战档 linear/cosine × seed 42/43/44 六组实验均已完成。FID≤15 v2 的三组严格 200 epoch 实验也已完成；小型结果、摘要和最终样本网格在仓库中，大型 checkpoint 与中间样本在 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1) 或 AutoDL 实验目录中。
 
 ## 基础档完成清单
 
@@ -131,8 +131,25 @@ python -u experiment_monitor.py \
   --host 127.0.0.1 --port 8765
 ```
 
-本页面每 2 秒刷新，训练结束后只读显示最终 checkpoint；本轮实际 FID、耗时和样本结果
-须以 AutoDL 运行产生的文件为准，未运行前不预填实验数值。
+本页面每 2 秒刷新，训练结束后只读显示最终 checkpoint。v2 实际结果已经记录在
+`results/fid15_v2/primary_results.md`；R2 的恢复过程和磁盘问题见 `debug_log.md`。
+
+### v2 实际 primary 结果
+
+| 实验 | 未裁剪 x0 | 裁剪 x0 |
+|---|---:|---:|
+| R1 full linear default | 18.8045 | 18.8144 |
+| R2 full linear cosine-LR | 19.4615 | 19.4633 |
+| R3 full cosine default | 162.8797 | 16.1686 |
+
+三组均使用 5,000 张生成图像、5,000 张无增强训练图像、seed 44 和 EMA 0.9999。
+primary 最优为 R3 裁剪 x0 的 16.1686，仍高于 FID≤15；EMA 多 decay 对比结果见
+`results/fid15_v2/ema_comparison_clipx0.md`。
+
+R3 的 EMA decay 对比为：EMA 0.999=`15.7886`、EMA 0.9995=`15.5340`、EMA
+0.9999=`16.1686`、raw=`66.6401`。因此 v2 最终最佳为 EMA 0.9995 的 `15.5340`，
+距离目标差 `0.5340`，仍未达标。cosine 未裁剪诊断在 `t=999` 的 `pred_x0_abs_max`
+约为 `964.98`、越界比例约 `99.43%`；逐步裁剪 x0 后 FID 大幅下降，但仍不足以达到 15。
 
 ## 核心公式
 

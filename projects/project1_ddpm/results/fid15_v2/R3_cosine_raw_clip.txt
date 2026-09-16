@@ -1,0 +1,7 @@
+FID: 66.6401
+num_samples: 5000
+real_split: train
+weights: raw
+checkpoint: runs/fid15_v2_full_cosine_default/ckpt/final.pt
+seed: 44
+clip_denoised: True

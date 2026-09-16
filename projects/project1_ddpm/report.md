@@ -203,3 +203,45 @@ FID 使用每次 5,000 张生成图像，对比 5,000 张不使用随机增强�
 
 本次没有运行 50 轮控制组，因此不能回答 50 轮下的调度策略差异。三组 seed 仍是有限样本，FID
 也会受到 Inception 实现、输入范围、真实数据划分和生成样本数影响；结论应视为本配置下的实验观察。
+
+## v2：完整 U-Net、cosine 诊断与学习率策略
+
+为继续冲击 FID≤15，在保持严格 200 epoch 约束的前提下，新增了完整的多级 skip
+connection U-Net、sinusoidal time embedding 注入、EMA bank（0.999/0.9995/0.9999）、
+warmup 和 cosine-LR 配置，并将 cosine beta schedule 与 linear beta schedule 分开做对照。
+三组实验均使用 seed 44、CIFAR-10、5,000 张生成图像对 5,000 张无增强 train 图像计算 FID。
+
+### v2 primary 结果
+
+| 实验 | 训练策略 | 未裁剪 x0 | 裁剪 x0 | 训练状态 |
+|---|---|---:|---:|---|
+| R1 | full U-Net + linear beta + warmup 后固定 LR | 18.8045 | 18.8144 | 完成 |
+| R2 | full U-Net + linear beta + warmup 后 cosine LR | 19.4615 | 19.4633 | 完成 |
+| R3 | full U-Net + cosine beta + warmup 后固定 LR | 162.8797 | 16.1686 | 完成 |
+
+默认评估权重为 EMA 0.9999。R3 的 cosine beta 未裁剪采样出现严重反向轨迹异常；逐步
+裁剪预测的 x0 后 FID 从 162.8797 降到 16.1686，说明裁剪确实抑制了异常值传播，但仍
+没有达到 15。R1 和 R2 的裁剪前后几乎不变，说明 x0 clipping 不是 linear 配置下的主要
+瓶颈。R2 从有效的 step 70000 checkpoint 恢复到 step 78000；原有 final.pt 因 AutoDL
+数据盘空间不足而损坏，恢复后新 final.pt 已通过加载验证。
+
+### 当前 v2 判断
+
+在 primary 结果中，最佳 FID 为 R3 裁剪 x0 的 16.1686。进一步在同一 R3 checkpoint、同一
+采样协议下比较 EMA decay 后，EMA 0.999、0.9995、0.9999 和 raw 的 FID 分别为
+15.7886、15.5340、16.1686 和 66.6401；完整记录见
+`results/fid15_v2/ema_comparison_clipx0.md`。因此本轮最终最佳为 EMA 0.9995 的
+15.5340，距离 FID≤15 仍差 0.5340，结论为未达标。
+
+主要原因包括：
+
+1. 当前训练预算只有严格 200 epoch，完整 U-Net 虽然提升了建模能力，但没有改变 CIFAR-10
+   无条件 DDPM 在该预算下的优化难度；
+2. linear beta 在本实现和评估协议下明显稳定，cosine beta 的未裁剪反向过程会积累极端
+   `pred_x0`，导致 Inception 特征分布严重偏离；clipping 能修复大部分异常，但不能完全
+   恢复 linear 的质量；
+3. 从 step 70000 到 78000 的 cosine-LR 尾段训练没有带来收益，R2 的 19.4615 高于 R1
+   的 18.8045，说明后期 LR 衰减设置在当前 checkpoint 和预算下并非有效改进；
+4. FID 使用 5,000 对 5,000 图像，仍受生成 seed、Inception 实现、输入范围和 real split
+   影响，因此 16.1686 与 15 的差距应通过固定协议下的复现实验确认，而不能通过更换
+   数据子集或随机种子选择性报告。
