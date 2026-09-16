@@ -66,17 +66,20 @@ def _loss(path: Path, limit: int = 400) -> list[dict[str, Any]]:
 def _log_state(text: str, limit: int = 400) -> tuple[str | None, dict[str, list[dict[str, Any]]]]:
     """Extract the active run and live training points from the runner log."""
 
+    def canonical_label(name: str) -> str:
+        return name.strip().removesuffix("_RECOVERY")
+
     current: str | None = None
     points: dict[str, list[dict[str, Any]]] = {}
     for line in text.splitlines():
         start = START_RE.search(line)
         if start:
-            current = start.group(1).strip()
+            current = canonical_label(start.group(1))
             points.setdefault(current, [])
             continue
         end = END_RE.search(line)
         if end:
-            if current == end.group(1).strip():
+            if current == canonical_label(end.group(1)):
                 current = None
             continue
         if current is None:
@@ -143,18 +146,22 @@ class Dashboard:
             # final.pt left by a full disk from being reported as completed.
             final = (ckpt / "final.pt").exists() and loss_path.is_file()
             step = spec.total_steps if final else max(steps, default=0)
-            active = runner_alive and active_label == spec.label and not final
+            active = runner_alive and active_label == spec.label
             failed = f"{spec.label} training failed" in log_text
-            status = "completed" if final else (
-                "running" if active else ("failed" if failed else ("stopped" if step else "pending"))
+            status = "evaluating" if final and active else (
+                "completed" if final else (
+                    "running" if active else ("failed" if failed else ("stopped" if step else "pending"))
+                )
             )
             latest = loss[-1] if loss else {}
             sample_paths = sorted((spec.path / "samples").glob("step_*.png"), key=_step)[-8:]
             checkpoint_paths = list(ckpt.glob("*.pt"))
-            latest_checkpoint = max(checkpoint_paths, key=_step).name if checkpoint_paths else None
+            latest_checkpoint = (
+                "final.pt" if final else max(checkpoint_paths, key=_step).name if checkpoint_paths else None
+            )
             runs.append({
                 "label": spec.label, "status": status,
-                "status_label": {"completed":"已完成","running":"训练中","failed":"失败","stopped":"已停止","pending":"等待中"}[status],
+                "status_label": {"completed":"已完成","running":"训练中","evaluating":"评估中","failed":"失败","stopped":"已停止","pending":"等待中"}[status],
                 "step": step, "total_steps": spec.total_steps,
                 "percent": min(100.0, 100.0 * step / max(spec.total_steps, 1)),
                 "latest_loss": f"{latest['loss']:.5f}" if latest else None,
@@ -166,7 +173,7 @@ class Dashboard:
             })
         completed = sum(run["status"] == "completed" for run in runs)
         failed = sum(run["status"] == "failed" for run in runs)
-        current = next((run for run in runs if run["status"] == "running"), None)
+        current = next((run for run in runs if run["status"] in {"running", "evaluating"}), None)
         if current is None:
             current = next((run for run in runs if run["status"] == "pending"), None)
         if current is None:
@@ -175,8 +182,16 @@ class Dashboard:
         completed_steps = sum(int(run["step"]) for run in runs)
         log = "\n".join(log_text.splitlines()[-24:])
         return {
-            "status": "completed" if completed == len(runs) and runs else ("running" if current and current["status"] == "running" else ("failed" if failed else "pending")),
-            "status_label": "全部完成" if completed == len(runs) and runs else ("训练中" if current and current["status"] == "running" else ("有实验失败" if failed else "等待启动")),
+            "status": "completed" if completed == len(runs) and runs else (
+                current["status"] if current and current["status"] in {"running", "evaluating"}
+                else ("failed" if failed else "pending")
+            ),
+            "status_label": "全部完成" if completed == len(runs) and runs else (
+                "训练中" if current and current["status"] == "running" else (
+                    "评估中" if current and current["status"] == "evaluating"
+                    else ("有实验失败" if failed else "等待启动")
+                )
+            ),
             "current": current["label"] if current else None,
             "completed_steps": completed_steps, "total_steps": total_steps,
             "percent": min(100.0, 100.0 * completed_steps / max(total_steps, 1)),
