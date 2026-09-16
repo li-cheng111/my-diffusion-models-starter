@@ -1,0 +1,7 @@
+FID: 18.1502
+num_samples: 5000
+real_split: train
+weights: EMA
+checkpoint: final.pt
+seed: 44
+clip_denoised: False

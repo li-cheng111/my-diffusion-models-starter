@@ -76,6 +76,7 @@ def p_sample(
     xt: torch.Tensor,
     t: torch.Tensor,
     schedule: DDPMSchedule,
+    clip_denoised: bool = False,
 ) -> torch.Tensor:
     """Perform one stochastic reverse step x_t -> x_{t-1}."""
 
@@ -97,9 +98,27 @@ def p_sample(
         schedule.sqrt_one_minus_alphas_cumprod, t, xt.shape
     )
 
-    mean = sqrt_recip_alpha_t * (
-        xt - beta_t * predicted_noise / sqrt_one_minus_alpha_bar_t.clamp(min=1e-20)
-    )
+    if clip_denoised:
+        # Convert epsilon prediction to x_0, constrain it to the data range,
+        # and then use q(x_{t-1} | x_t, x_0) for the reverse mean. The noisy
+        # state xt is intentionally not clipped.
+        alpha_bar_t = _extract(schedule.alphas_cumprod, t, xt.shape)
+        alpha_bar_prev_t = _extract(schedule.alphas_cumprod_prev, t, xt.shape)
+        pred_x0 = (
+            torch.rsqrt(alpha_bar_t) * xt
+            - torch.sqrt(1.0 / alpha_bar_t - 1.0) * predicted_noise
+        ).clamp(-1.0, 1.0)
+        posterior_mean_coef1 = beta_t * torch.sqrt(alpha_bar_prev_t) / (1.0 - alpha_bar_t)
+        posterior_mean_coef2 = (
+            _extract(schedule.alphas, t, xt.shape).sqrt()
+            * (1.0 - alpha_bar_prev_t)
+            / (1.0 - alpha_bar_t)
+        )
+        mean = posterior_mean_coef1 * pred_x0 + posterior_mean_coef2 * xt
+    else:
+        mean = sqrt_recip_alpha_t * (
+            xt - beta_t * predicted_noise / sqrt_one_minus_alpha_bar_t.clamp(min=1e-20)
+        )
 
     variance_t = _extract(schedule.posterior_variance, t, xt.shape)
     noise = torch.randn_like(xt)
@@ -113,6 +132,7 @@ def p_sample_loop(
     shape: Sequence[int],
     schedule: DDPMSchedule,
     device: Optional[torch.device] = None,
+    clip_denoised: bool = False,
 ) -> torch.Tensor:
     """Generate a batch by applying all T reverse steps."""
 
@@ -123,5 +143,5 @@ def p_sample_loop(
     x = torch.randn(tuple(shape), device=device)
     for step in reversed(range(schedule.T)):
         t = torch.full((shape[0],), step, device=device, dtype=torch.long)
-        x = p_sample(model, x, t, schedule)
+        x = p_sample(model, x, t, schedule, clip_denoised=clip_denoised)
     return x

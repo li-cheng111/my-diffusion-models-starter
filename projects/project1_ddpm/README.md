@@ -28,6 +28,24 @@
 - [x] CIFAR-10 实际训练、EMA/raw 样本和 FID 对比报告
 - [ ] FID ≤ 15（本次 EMA FID 为 19.2879，仍需调参或重训）
 
+## FID≤15 改进实验状态
+
+在 AutoDL NVIDIA GeForce RTX 4090 上，基于 linear/seed44 的原始 CIFAR-10
+checkpoint 继续训练到 100,000 次有效更新，并固定使用 5,000 张训练集图像、EMA
+权重和 seed 44 评估。实验同时比较了预测 $x_0$ 的逐步裁剪与原始采样；裁剪只影响
+采样阶段，不改变训练目标。
+
+| checkpoint | 采样方式 | FID |
+|---|---|---:|
+| 原始 200 epoch / seed44 | 未裁剪 | 18.9577 |
+| 原始 200 epoch / seed44 | 裁剪预测 $x_0$ | 18.9715 |
+| 100,000 有效更新 | 未裁剪 | **18.1502** |
+| 100,000 有效更新 | 裁剪预测 $x_0$ | **18.1490** |
+
+续训相对原始未裁剪基线下降 0.8087 FID；本次仍未达到 FID≤15。裁剪预测 $x_0$
+在最终 checkpoint 上只带来 0.0012 的额外下降，不能视为稳定收益。详细配置、日志
+和限制见 `report.md`、`debug_log.md` 以及 `results/fid15_4090_linear_seed44/summary.md`。
+
 ## 挑战档实现状态
 
 - [x] `cosine_beta_schedule` 已实现并接入 `DDPMSchedule`
@@ -130,3 +148,7 @@ python evaluate.py --ckpt runs/exp_cifar10_advanced/ckpt/final.pt \
 实验结果已经同步到 `report.md`、`debug_log.md`、`challenge_report.md`、`results/challenge/` 和 `logs/`。
 由于大型二进制文件不进入普通 Git，挑战档 checkpoint 和中间样本请从
 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1) 下载。
+
+FID 改进实验的最终 EMA checkpoint、各阶段 checkpoint 和原始 source checkpoint 不进入普通 Git；
+请从对应 Release 下载。仓库中保留可复核的 FID 文本、配置、loss history、loss 曲线、最终样本网格
+和实验摘要。

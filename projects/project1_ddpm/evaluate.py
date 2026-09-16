@@ -36,6 +36,7 @@ def compute_fid(
     device: torch.device,
     image_size: int,
     in_channels: int,
+    clip_denoised: bool = False,
 ) -> float:
     try:
         from torchmetrics.image.fid import FrechetInceptionDistance
@@ -68,6 +69,7 @@ def compute_fid(
             (current_batch, in_channels, image_size, image_size),
             schedule,
             device=device,
+            clip_denoised=clip_denoised,
         )
         fid.update(_to_uint8_rgb(samples, in_channels), real=False)
         generated += current_batch
@@ -115,6 +117,11 @@ def main() -> None:
         help="Evaluate both EMA and raw weights using the same random seed.",
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--clip_denoised",
+        action="store_true",
+        help="Clip predicted x_0 to [-1, 1] before each reverse posterior update.",
+    )
     parser.add_argument("--data_root", default="./data")
     parser.add_argument(
         "--real_split",
@@ -158,9 +165,11 @@ def main() -> None:
             device,
             image_size,
             in_channels,
+            clip_denoised=args.clip_denoised,
         )
         results[weight_type] = score
-        result_path = Path(args.ckpt).parent / f"fid_{args.num_samples}_{weight_type}.txt"
+        clip_suffix = "_clipx0" if args.clip_denoised else "_noclipx0"
+        result_path = Path(args.ckpt).parent / f"fid_{args.num_samples}_{weight_type}{clip_suffix}.txt"
         result_path.write_text(
             f"FID: {score:.4f}\n"
             f"num_samples: {args.num_samples}\n"
@@ -168,11 +177,13 @@ def main() -> None:
             f"weights: {weight_type}\n"
             f"checkpoint: {args.ckpt}\n"
             f"seed: {args.seed}\n"
+            f"clip_denoised: {args.clip_denoised}\n"
         )
         print(f"FID @ {args.num_samples} samples ({weight_type}, real={args.real_split}): {score:.4f}")
 
     if len(results) == 2:
-        comparison_path = Path(args.ckpt).parent / "fid_comparison.md"
+        clip_suffix = "_clipx0" if args.clip_denoised else "_noclipx0"
+        comparison_path = Path(args.ckpt).parent / f"fid_comparison{clip_suffix}.md"
         ema_score = results["EMA"]
         raw_score = results["raw"]
         comparison_path.write_text(
@@ -181,6 +192,7 @@ def main() -> None:
             f"- Real samples: `{args.num_samples}`\n"
             f"- Generated samples per run: `{args.num_samples}`\n"
             f"- Seed: `{args.seed}`\n\n"
+            f"- Clip predicted x0: `{args.clip_denoised}`\n\n"
             "| Weights | FID |\n"
             "|---|---:|\n"
             f"| EMA | {ema_score:.4f} |\n"

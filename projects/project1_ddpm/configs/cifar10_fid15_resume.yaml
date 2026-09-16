@@ -1,0 +1,54 @@
+# FID-15 follow-up: continue the existing linear/seed44 run to step 100000.
+output_dir: runs/fid15_4090_linear_seed44
+seed: 44
+
+dataset:
+  name: cifar10
+  batch_size: 128
+  image_size: 32
+  num_workers: 8
+  root: ./data
+
+model:
+  in_channels: 3
+  out_channels: 3
+  base_channels: 128
+  channel_mult: [1, 2, 2, 2]
+  num_res_blocks: 2
+  attn_resolutions: [16]
+  dropout: 0.1
+  image_size: 32
+
+diffusion:
+  T: 1000
+  beta_schedule: linear
+  beta_start: 0.0001
+  beta_end: 0.02
+
+optimizer:
+  lr: 2.0e-4
+  weight_decay: 0.0
+  warmup_steps: 0
+
+# The schedule is measured from the resumed checkpoint, not from step zero.
+resume_lr_schedule:
+  start_lr: 2.0e-4
+  end_lr: 2.0e-5
+  steps: 22000
+
+ema_decay: 0.9999
+mixed_precision: fp16
+
+training:
+  num_epochs: 257
+  max_steps: 100000
+  log_every: 100
+  sample_every: 0
+  ckpt_every: 5000
+  grad_clip: 1.0
+  gradient_accumulation_steps: 1
+
+wandb:
+  enabled: false
+  project: ddpm-course
+  run_name: fid15_linear_seed44_resume

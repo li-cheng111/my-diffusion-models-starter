@@ -64,7 +64,10 @@ def _set_seed(seed: int) -> None:
 def _save_loss_history(history: list[Dict[str, float]], output_dir: Path) -> None:
     csv_path = output_dir / "loss_history.csv"
     with csv_path.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["step", "epoch", "loss", "lr"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["step", "epoch", "loss", "lr", "optimizer_step_skipped"],
+        )
         writer.writeheader()
         writer.writerows(history)
 
@@ -97,6 +100,7 @@ def _save_checkpoint(
     cfg: Dict[str, Any],
     epoch: int,
     global_step: int,
+    resume_schedule_origin_step: Optional[int] = None,
 ) -> None:
     state: Dict[str, Any] = {
         "epoch": epoch,
@@ -111,6 +115,8 @@ def _save_checkpoint(
         state["ema"] = ema.state_dict()
     if scaler.is_enabled():
         state["scaler"] = scaler.state_dict()
+    if resume_schedule_origin_step is not None:
+        state["resume_schedule_origin_step"] = resume_schedule_origin_step
     torch.save(state, path)
 
 
@@ -141,9 +147,10 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
         betas=(0.9, 0.999),
     )
 
+    resume_lr_cfg = cfg.get("resume_lr_schedule")
     warmup_steps = int(cfg["optimizer"].get("warmup_steps", 0))
     lr_scheduler = None
-    if warmup_steps > 0:
+    if warmup_steps > 0 and resume_lr_cfg is None:
         lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer, lambda step: min((step + 1) / warmup_steps, 1.0)
         )
@@ -157,6 +164,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
 
     start_epoch = 0
     global_step = 0
+    resume_schedule_origin_step: Optional[int] = None
     if resume:
         checkpoint = torch.load(resume, map_location=device)
         model.load_state_dict(checkpoint["model"])
@@ -169,6 +177,19 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
             scaler.load_state_dict(checkpoint["scaler"])
         start_epoch = int(checkpoint.get("epoch", -1)) + 1
         global_step = int(checkpoint.get("global_step", 0))
+        if resume_lr_cfg is not None:
+            resume_schedule_origin_step = int(
+                checkpoint.get("resume_schedule_origin_step", global_step)
+            )
+
+    if resume_lr_cfg is not None:
+        if resume_schedule_origin_step is None:
+            resume_schedule_origin_step = global_step
+        start_lr = float(resume_lr_cfg.get("start_lr", cfg["optimizer"]["lr"]))
+        end_lr = float(resume_lr_cfg.get("end_lr", start_lr))
+        decay_steps = max(1, int(resume_lr_cfg.get("steps", 1)))
+        for group in optimizer.param_groups:
+            group["lr"] = start_lr
 
     wandb_enabled = bool(cfg.get("wandb", {}).get("enabled", False))
     wandb = None
@@ -187,40 +208,77 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
     sample_every = int(training_cfg.get("sample_every", 1000))
     ckpt_every = int(training_cfg.get("ckpt_every", 5000))
     grad_clip = float(training_cfg.get("grad_clip", 1.0))
+    max_steps = training_cfg.get("max_steps")
+    max_steps = int(max_steps) if max_steps is not None else None
+    grad_accum_steps = max(1, int(training_cfg.get("gradient_accumulation_steps", 1)))
     history: list[Dict[str, float]] = []
     start_time = time.time()
+    last_epoch = start_epoch - 1
+    micro_step = 0
 
     model.train()
+    optimizer.zero_grad(set_to_none=True)
     for epoch in range(start_epoch, int(training_cfg["num_epochs"])):
+        last_epoch = epoch
         for x0 in loader:
+            if max_steps is not None and global_step >= max_steps:
+                break
             x0 = x0.to(device, non_blocking=True)
             t = torch.randint(0, schedule.T, (x0.shape[0],), device=device)
-            optimizer.zero_grad(set_to_none=True)
             with autocast(enabled=use_amp, dtype=amp_dtype):
-                loss = p_losses(model, x0, t, schedule)
+                loss = p_losses(model, x0, t, schedule) / grad_accum_steps
+
+            micro_step += 1
 
             if scaler.is_enabled():
                 scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-                scaler.step(optimizer)
-                scaler.update()
             else:
                 loss.backward()
+
+            if micro_step % grad_accum_steps != 0:
+                continue
+
+            if resume_lr_cfg is not None:
+                progress = min(
+                    max((global_step - resume_schedule_origin_step) / decay_steps, 0.0),
+                    1.0,
+                )
+                lr_for_update = end_lr + (start_lr - end_lr) * 0.5 * (
+                    1.0 + torch.cos(torch.tensor(progress * torch.pi)).item()
+                )
+                for group in optimizer.param_groups:
+                    group["lr"] = lr_for_update
+
+            skipped = False
+            if scaler.is_enabled():
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                old_scale = scaler.get_scale()
+                scaler.step(optimizer)
+                scaler.update()
+                skipped = scaler.get_scale() < old_scale
+            else:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
                 optimizer.step()
+            if skipped:
+                # A GradScaler overflow did not produce an optimizer update;
+                # do not advance the schedule, EMA, or effective step count.
+                optimizer.zero_grad(set_to_none=True)
+                continue
             if lr_scheduler is not None:
                 lr_scheduler.step()
             if ema is not None:
                 ema.update(model)
 
             global_step += 1
+            optimizer.zero_grad(set_to_none=True)
             lr_now = float(optimizer.param_groups[0]["lr"])
             row = {
                 "step": float(global_step),
                 "epoch": float(epoch),
-                "loss": float(loss.detach().cpu()),
+                "loss": float((loss * grad_accum_steps).detach().cpu()),
                 "lr": lr_now,
+                "optimizer_step_skipped": float(skipped),
             }
             history.append(row)
             if global_step % log_every == 0:
@@ -265,7 +323,11 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                     cfg,
                     epoch,
                     global_step,
+                    resume_schedule_origin_step,
                 )
+
+        if max_steps is not None and global_step >= max_steps:
+            break
 
     _save_checkpoint(
         output_dir / "ckpt" / "final.pt",
@@ -275,8 +337,9 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
         ema,
         scaler,
         cfg,
-        int(training_cfg["num_epochs"]) - 1,
+        last_epoch,
         global_step,
+        resume_schedule_origin_step,
     )
     _save_loss_history(history, output_dir)
     if wandb is not None:

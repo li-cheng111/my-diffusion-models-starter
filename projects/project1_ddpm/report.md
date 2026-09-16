@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-本仓库已完成项目 1 基础档、进阶档和挑战档的源码、配置、静态测试、结果和实验文档。MNIST 基线与 CIFAR-10 实验均在 AutoDL 的 NVIDIA GeForce RTX 5090 上完成真实训练、采样和 FID 评估。本报告只记录实际得到的结果；进阶档单次 linear EMA FID 为 19.2879，挑战档六组实验的汇总见 `results/challenge/summary.md`。
+本仓库已完成项目 1 基础档、进阶档和挑战档的源码、配置、静态测试、结果和实验文档。MNIST 基线与 CIFAR-10 实验均在 AutoDL 上完成真实训练、采样和 FID 评估。本报告只记录实际得到的结果；原始进阶档单次 linear EMA FID 为 19.2879，挑战档六组实验的汇总见 `results/challenge/summary.md`。针对 FID≤15 的独立续训实验最终 EMA FID 为 18.1490，仍未达标。
 
 ## 方法概述
 
@@ -114,6 +114,55 @@ EMA 的 FID 比 raw 低 9.4586，说明本次训练中 EMA 权重的分布质量
 本次未达到 FID ≤ 15；后续若继续冲击目标，应在保留已有结果的基础上调整模型、schedule 或训练策略后重新实验。
 
 ## 挑战档实验结果
+
+## FID≤15 改进实验
+
+### 实验目的与控制变量
+
+原始 linear/seed44 checkpoint 已经接近当前实验矩阵中的最好结果，因此本实验只改变
+训练时长，并加入一个独立的采样消融变量：从该 checkpoint 继续训练到 100,000 次有效
+更新，同时分别评估原始反向采样和预测 $x_0$ 逐步裁剪的采样。模型结构、linear beta
+schedule、CIFAR-10 数据、EMA、评估样本数、真实数据划分和随机种子保持固定；不加入
+learned variance、hybrid loss 或 importance sampling。
+
+配置文件为 `configs/cifar10_fid15_resume.yaml`，输出目录为
+`runs/fid15_4090_linear_seed44`。续训使用 batch size 128、AdamW、初始学习率
+$2\times10^{-4}$，在新增 22,000 次有效更新内余弦下降到 $2\times10^{-5}$，并恢复
+raw、optimizer、EMA 和 AMP scaler 状态。训练每 5,000 步保存一个 checkpoint，最终
+保存 `step_100000.pt` 和 `final.pt`。
+
+### 固定协议下的 FID 结果
+
+所有数值均为 EMA 权重、5,000 张生成样本对 5,000 张无增强 CIFAR-10 train 图像的
+FID，seed 为 44：
+
+| 模型 | 采样方式 | FID | 相对原始未裁剪基线 |
+|---|---|---:|---:|
+| 原始 200 epoch / seed44 | 未裁剪 | 18.9577 | 0.0000 |
+| 原始 200 epoch / seed44 | 裁剪预测 $x_0$ | 18.9715 | +0.0138 |
+| 100,000 有效更新 | 未裁剪 | 18.1502 | -0.8075 |
+| 100,000 有效更新 | 裁剪预测 $x_0$ | **18.1490** | **-0.8087** |
+
+续训是主要收益来源：在相同采样方式下，未裁剪 FID 从 18.9577 降到 18.1502。
+预测 $x_0$ 裁剪在原始 checkpoint 上略有负收益，在最终 checkpoint 上只比未裁剪低
+0.0012，属于很小的差异，不能据此断言该技巧能稳定改善 FID。最终最佳结果为
+18.1490，距离目标 15 仍有 3.1490，因此本轮结论是“有改善，但未达标”。
+
+### 训练与产物
+
+- 硬件：NVIDIA GeForce RTX 4090，单卡；
+- 续训时间：28.5 分钟；
+- 有效更新：从约 78k 续训至 100,000；
+- 最后日志：`step=100000`，loss `0.02777`，学习率 `2.000e-05`；
+- 稳定性：未观察到 NaN、AMP 跳步或异常中断；AutoDL SSH 断联后，screen 中的评估
+  进程被重新检查，已有 checkpoint 未受影响；
+- AutoDL 原始结果目录：`runs/fid15_4090_linear_seed44/`；Git 中的复核副本位于
+  `results/fid15_4090_linear_seed44/`；
+- 最终样本网格：`results/fid15_4090_linear_seed44/samples_final_ema_grid.png`。
+
+大型 checkpoint 和中间样本不进入普通 Git，使用 GitHub Release 附件保存。普通 Git
+只保存代码、配置、FID 文本、loss history、loss 曲线、样本网格和摘要，避免仓库被
+二进制权重或 CIFAR-10 临时数据占满。
 
 挑战档要求实现 cosine 调度策略，并在相同模型和训练协议下对比 linear/cosine，分别使用随机种子 `42、43、44` 报告均值 ± 标准差，同时提交包含失败案例分析的八页技术报告。本仓库已完成实现、六组真实实验和结果汇总：
 
