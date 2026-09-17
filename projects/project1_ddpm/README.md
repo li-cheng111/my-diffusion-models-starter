@@ -211,3 +211,26 @@ python evaluate.py --ckpt runs/exp_cifar10_advanced/ckpt/final.pt \
 FID 改进实验的最终 EMA checkpoint、各阶段 checkpoint 和原始 source checkpoint 不进入普通 Git；
 请从对应 Release 下载。仓库中保留可复核的 FID 文本、配置、loss history、loss 曲线、最终样本网格
 和实验摘要。
+
+## FID≤15 最终改进运行：R4 Min-SNR
+
+最终执行方案只新增一组训练，不改变 R3 的 200 epoch、78,000 次有效更新、cosine
+beta、完整 U-Net、batch size 128、seed 44、warmup、AMP 和 EMA 设置；唯一训练改动是
+对 epsilon MSE 使用 Min-SNR-$\gamma=5$ 权重。配置为
+`configs/cifar10_fid15_r4_min_snr.yaml`，独立输出目录为
+`runs/fid15_r4_min_snr`，启动脚本为 `run_fid15_r4.sh`。结果产生前不填写 FID，避免虚构
+实验结论。
+
+训练与评估期间可用以下只读页面实时查看 step、loss、GPU、checkpoint 和样本：
+
+```bash
+python -u experiment_monitor.py \\
+  --run R4_min_snr=runs/fid15_r4_min_snr \\
+  --total-steps 78000 \\
+  --pid-file runs/fid15_r4_min_snr.pid \\
+  --log-path logs/fid15_r4_min_snr.log \\
+  --host 127.0.0.1 --port 8765
+```
+
+然后通过 SSH 本地端口转发访问 `http://127.0.0.1:8765/`。训练完成后脚本首先用 EMA
+0.9995、裁剪 $x_0$ 和固定 5,000/5,000 train split 评估，再补充 EMA bank 对比。

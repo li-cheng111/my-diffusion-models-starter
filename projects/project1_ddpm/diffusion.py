@@ -65,8 +65,23 @@ def p_losses(
     x0: torch.Tensor,
     t: torch.Tensor,
     schedule: DDPMSchedule,
+    loss_weighting: str = "uniform",
+    min_snr_gamma: float = 5.0,
 ) -> torch.Tensor:
-    """Compute the simplified DDPM noise-prediction MSE."""
+    """Compute the DDPM noise-prediction MSE.
+
+    ``min_snr`` implements the Min-SNR-gamma weighting for epsilon
+    prediction.  The default remains the original uniform objective so
+    existing experiments and checkpoints keep their original semantics.
+    The weighting is computed in float32 because cosine schedules can have
+    extremely small terminal alpha-bars.
+    """
+
+    weighting = loss_weighting.lower()
+    if weighting not in {"uniform", "min_snr"}:
+        raise ValueError("loss_weighting must be 'uniform' or 'min_snr'")
+    if weighting == "min_snr" and min_snr_gamma <= 0:
+        raise ValueError("min_snr_gamma must be positive")
 
     noise = torch.randn_like(x0)
     xt = q_sample(
@@ -82,7 +97,16 @@ def p_losses(
             "model output must have the same shape as the injected noise: "
             f"{tuple(predicted_noise.shape)} != {tuple(noise.shape)}"
         )
-    return F.mse_loss(predicted_noise, noise)
+    per_example = F.mse_loss(predicted_noise, noise, reduction="none")
+    per_example = per_example.flatten(start_dim=1).mean(dim=1)
+    if weighting == "uniform":
+        return per_example.mean()
+
+    alpha_bar = schedule.alphas_cumprod.to(device=x0.device, dtype=torch.float32)[t]
+    snr = alpha_bar / (1.0 - alpha_bar).clamp(min=1e-20)
+    weight = torch.minimum(snr, torch.full_like(snr, float(min_snr_gamma)))
+    weight = weight / snr.clamp(min=1e-20)
+    return (per_example.float() * weight).mean().to(per_example.dtype)
 
 
 @torch.no_grad()

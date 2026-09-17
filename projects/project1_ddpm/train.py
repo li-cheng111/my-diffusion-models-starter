@@ -306,6 +306,8 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
     max_steps = training_cfg.get("max_steps")
     max_steps = int(max_steps) if max_steps is not None else None
     grad_accum_steps = max(1, int(training_cfg.get("gradient_accumulation_steps", 1)))
+    loss_weighting = str(training_cfg.get("loss_weighting", "uniform"))
+    min_snr_gamma = float(training_cfg.get("min_snr_gamma", 5.0))
     history: list[Dict[str, float]] = []
     start_time = time.time()
     last_epoch = start_epoch - 1
@@ -321,7 +323,14 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
             x0 = x0.to(device, non_blocking=True)
             t = torch.randint(0, schedule.T, (x0.shape[0],), device=device)
             with autocast(enabled=use_amp, dtype=amp_dtype):
-                loss = p_losses(model, x0, t, schedule) / grad_accum_steps
+                loss = p_losses(
+                    model,
+                    x0,
+                    t,
+                    schedule,
+                    loss_weighting=loss_weighting,
+                    min_snr_gamma=min_snr_gamma,
+                ) / grad_accum_steps
 
             micro_step += 1
 
