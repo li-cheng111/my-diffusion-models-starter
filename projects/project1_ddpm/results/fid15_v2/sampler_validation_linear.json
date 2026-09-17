@@ -1,0 +1,150 @@
+{
+  "beta_schedule": "linear",
+  "T": 1000,
+  "fixed_input": {
+    "x_t": "torch.linspace(-0.75, 0.75, 2*3*8*8).reshape(2,3,8,8)",
+    "epsilon": "torch.linspace(0.15, -0.15, 2*3*8*8).reshape(2,3,8,8)"
+  },
+  "schedule": {
+    "beta_min": 9.999999747378752e-05,
+    "beta_max": 0.019999999552965164,
+    "alpha_bar_final": 4.035830352222547e-05
+  },
+  "max_formula_error": 0.0001245010025986426,
+  "tolerance": 0.0002,
+  "pass": true,
+  "checks": [
+    {
+      "t": 999,
+      "clip_denoised": false,
+      "mean_max_abs_diff": 1.4109905577264215e-08,
+      "production_p_sample_max_abs_diff": 7.101972998579953e-08,
+      "variance_max_abs_diff": 0.0,
+      "x0_max_abs_diff": 2.842170943040401e-14,
+      "local_x0_abs": {
+        "median": 71.01940875703824,
+        "p95": 134.89988736297832,
+        "p99": 140.3151172807025,
+        "max": 141.66892476013356,
+        "outside_fraction": 0.9947916666666666
+      },
+      "reference_x0_abs": {
+        "median": 71.01940875703824,
+        "p95": 134.89988736297832,
+        "p99": 140.3151172807025,
+        "max": 141.66892476013356,
+        "outside_fraction": 0.9947916666666666
+      }
+    },
+    {
+      "t": 999,
+      "clip_denoised": true,
+      "mean_max_abs_diff": 0.0,
+      "production_p_sample_max_abs_diff": 0.0,
+      "variance_max_abs_diff": 0.0,
+      "x0_max_abs_diff": 0.0,
+      "local_x0_abs": {
+        "median": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "max": 1.0,
+        "outside_fraction": 0.0
+      },
+      "reference_x0_abs": {
+        "median": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "max": 1.0,
+        "outside_fraction": 0.0
+      }
+    },
+    {
+      "t": 998,
+      "clip_denoised": false,
+      "mean_max_abs_diff": 5.030472483014137e-09,
+      "production_p_sample_max_abs_diff": 3.3910734664743813e-08,
+      "variance_max_abs_diff": 0.0,
+      "x0_max_abs_diff": 2.842170943040401e-14,
+      "local_x0_abs": {
+        "median": 70.30562329374567,
+        "p95": 133.5440667459846,
+        "p99": 138.90487052213274,
+        "max": 140.24507146616975,
+        "outside_fraction": 0.9947916666666666
+      },
+      "reference_x0_abs": {
+        "median": 70.30562329374567,
+        "p95": 133.5440667459846,
+        "p99": 138.9048705221327,
+        "max": 140.24507146616975,
+        "outside_fraction": 0.9947916666666666
+      }
+    },
+    {
+      "t": 998,
+      "clip_denoised": true,
+      "mean_max_abs_diff": 0.0,
+      "production_p_sample_max_abs_diff": 0.0,
+      "variance_max_abs_diff": 0.0,
+      "x0_max_abs_diff": 5.551115123125783e-17,
+      "local_x0_abs": {
+        "median": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "max": 1.0,
+        "outside_fraction": 0.0
+      },
+      "reference_x0_abs": {
+        "median": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "max": 1.0,
+        "outside_fraction": 0.0
+      }
+    },
+    {
+      "t": 0,
+      "clip_denoised": false,
+      "mean_max_abs_diff": 0.00012445902901037087,
+      "production_p_sample_max_abs_diff": 0.0001245010025986426,
+      "variance_max_abs_diff": 0.0,
+      "x0_max_abs_diff": 5.551115123125783e-16,
+      "local_x0_abs": {
+        "median": 0.3767499739789159,
+        "p95": 0.7156287266151593,
+        "p99": 0.7443559121310519,
+        "max": 0.7515377085100249,
+        "outside_fraction": 0.0
+      },
+      "reference_x0_abs": {
+        "median": 0.37674997397891613,
+        "p95": 0.7156287266151597,
+        "p99": 0.7443559121310523,
+        "max": 0.7515377085100254,
+        "outside_fraction": 0.0
+      }
+    },
+    {
+      "t": 0,
+      "clip_denoised": true,
+      "mean_max_abs_diff": 5.551115123125783e-16,
+      "production_p_sample_max_abs_diff": 5.551115123125783e-16,
+      "variance_max_abs_diff": 0.0,
+      "x0_max_abs_diff": 5.551115123125783e-16,
+      "local_x0_abs": {
+        "median": 0.3767499739789159,
+        "p95": 0.7156287266151593,
+        "p99": 0.7443559121310519,
+        "max": 0.7515377085100249,
+        "outside_fraction": 0.0
+      },
+      "reference_x0_abs": {
+        "median": 0.37674997397891613,
+        "p95": 0.7156287266151597,
+        "p99": 0.7443559121310523,
+        "max": 0.7515377085100254,
+        "outside_fraction": 0.0
+      }
+    }
+  ]
+}

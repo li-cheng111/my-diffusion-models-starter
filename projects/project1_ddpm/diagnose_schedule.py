@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from statistics import median
 from pathlib import Path
 
 import torch
@@ -20,6 +21,20 @@ def _seed(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def _abs_summary(value: torch.Tensor) -> dict[str, float]:
+    """Summarize absolute values without retaining the full sampling trace."""
+
+    flattened = value.detach().float().abs().reshape(-1)
+    quantiles = torch.tensor((0.5, 0.95, 0.99), device=flattened.device)
+    q50, q95, q99 = torch.quantile(flattened, quantiles).tolist()
+    return {
+        "median": float(q50),
+        "p95": float(q95),
+        "p99": float(q99),
+        "max": float(flattened.max().cpu()),
+    }
 
 
 @torch.no_grad()
@@ -63,17 +78,16 @@ def diagnose(
     step_summary = []
     for timestep in sorted(by_t, reverse=True):
         rows = by_t[timestep]
-        step_summary.append(
-            {
-                "t": timestep,
-                "xt_abs_max": max(row["xt_abs_max"] for row in rows),
-                "pred_x0_abs_max": max(row["pred_x0_abs_max"] for row in rows),
-                "pred_x0_outside_fraction": sum(
-                    row["pred_x0_outside_fraction"] for row in rows
-                ) / len(rows),
-                "pred_noise_abs_max": max(row["pred_noise_abs_max"] for row in rows),
-            }
-        )
+        summary = {"t": timestep}
+        for prefix in ("xt_abs", "pred_x0_abs", "pred_noise_abs"):
+            for statistic in ("median", "p95", "p99"):
+                key = f"{prefix}_{statistic}"
+                summary[key] = float(median(row[key] for row in rows))
+            summary[f"{prefix}_max"] = max(row[f"{prefix}_max"] for row in rows)
+        summary["pred_x0_outside_fraction"] = sum(
+            row["pred_x0_outside_fraction"] for row in rows
+        ) / len(rows)
+        step_summary.append(summary)
     betas = schedule.betas.detach().cpu()
     return {
         "checkpoint": checkpoint_path,

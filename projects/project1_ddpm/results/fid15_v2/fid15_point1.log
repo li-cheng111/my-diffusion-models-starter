@@ -1,0 +1,15 @@
+Thu Sep 17 09:26:55 CST 2026
+FID @ 5000 samples (EMA_0.9990, real=train): 18.9792
+FID @ 5000 samples (EMA_0.9995, real=train): 18.5210
+FID @ 5000 samples (EMA_0.9990, real=train): 20.3343
+FID @ 5000 samples (EMA_0.9995, real=train): 20.1602
+FID @ 5000 samples (EMA_0.9995, real=train): 40.9638
+FID @ 5000 samples (EMA_0.9995, real=train): 24.6445
+FID @ 5000 samples (EMA_0.9995, real=train): 19.8270
+FID @ 5000 samples (EMA_0.9995, real=train): 17.9806
+FID @ 5000 samples (EMA_0.9995, real=train): 16.9291
+FID @ 5000 samples (EMA_0.9995, real=train): 16.4440
+FID @ 5000 samples (EMA_0.9995, real=train): 15.9460
+Generated 64 samples in runs/fid15_v2_full_cosine_default/samples_inference_ema9995_clipx0
+Thu Sep 17 13:55:59 CST 2026
+POINT1_COMPLETE

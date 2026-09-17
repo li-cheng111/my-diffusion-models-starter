@@ -245,3 +245,41 @@ warmup 和 cosine-LR 配置，并将 cosine beta schedule 与 linear beta schedu
 4. FID 使用 5,000 对 5,000 图像，仍受生成 seed、Inception 实现、输入范围和 real split
    影响，因此 16.1686 与 15 的差距应通过固定协议下的复现实验确认，而不能通过更换
    数据子集或随机种子选择性报告。
+
+### v2 补充实验：EMA、R3 历史点与 sampler 校验
+
+为完成对当前结果的无重训诊断，R1、R2 在相同 `train` 前 5,000 张真实图、5,000 张生成图、
+seed 44、裁剪 $x_0$ 协议下比较 EMA 0.999 和 0.9995：
+
+| 实验 | EMA 0.999 | EMA 0.9995 |
+|---|---:|---:|
+| R1 full linear default | 18.9792 | 18.5210 |
+| R2 full linear cosine-LR | 20.3343 | 20.1602 |
+
+同一协议下，R3 EMA 0.9995 的历史 FID 为：
+
+| 训练步数 | FID |
+|---:|---:|
+| 10,000 | 40.9638 |
+| 20,000 | 24.6445 |
+| 30,000 | 19.8270 |
+| 40,000 | 17.9806 |
+| 50,000 | 16.9291 |
+| 60,000 | 16.4440 |
+| 70,000 | 15.9460 |
+| 最终 checkpoint | **15.5340** |
+
+历史结果单调接近最终结果，没有发现最终步数之前更低的 checkpoint。最佳 R3 EMA 0.9995
+裁剪样本网格单独保存为 `results/fid15_v2/R3_full_cosine_default_ema9995_clipx0_grid.png`；
+它不代表旧的 EMA 0.9999 未裁剪网格。
+
+此外，新增 `validate_sampler.py`，用固定 $x_t$、固定 epsilon 预测，在 `t=999,998,0`
+分别比较 production `p_sample` 与独立实现的 posterior mean、variance 和裁剪路径。cosine
+最大误差为 `5.7964e-7`，linear 最大误差为 `1.2450e-4`，均低于 `2e-4` 容差。linear
+误差峰值来自 `t=0` 直接 epsilon 公式与 float32 schedule 系数的近似相减，属于数值表示误差，
+不是 posterior 公式不一致。
+
+R3 轨迹诊断补充了 median、P95、P99 和 max。例如无裁剪 t=999 的 `pred_x0` 为
+`90.15/280.88/385.49/964.98`，裁剪 t=0 后的 P95/P99 约为 `0.94/0.99`。这说明 cosine
+末端小 $α\_bar$ 会放大 epsilon 预测误差；最大值异常本身不能证明 schedule 实现错误，
+但也说明逐步裁剪是当前采样协议下必要的稳定化操作。

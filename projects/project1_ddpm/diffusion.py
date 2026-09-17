@@ -24,6 +24,21 @@ def _extract(values: torch.Tensor, t: torch.Tensor, x_shape: Sequence[int]) -> t
     return gathered.reshape(t.shape[0], *([1] * (len(x_shape) - 1)))
 
 
+def _abs_summary(value: torch.Tensor) -> dict[str, float]:
+    """Return robust magnitude statistics for a sampling diagnostic."""
+
+    flattened = value.detach().float().abs().reshape(-1)
+    q50, q95, q99 = torch.quantile(
+        flattened, torch.tensor((0.5, 0.95, 0.99), device=flattened.device)
+    ).tolist()
+    return {
+        "median": float(q50),
+        "p95": float(q95),
+        "p99": float(q99),
+        "max": float(flattened.max().cpu()),
+    }
+
+
 def q_sample(
     x0: torch.Tensor,
     t: torch.Tensor,
@@ -78,8 +93,14 @@ def p_sample(
     schedule: DDPMSchedule,
     clip_denoised: bool = False,
     diagnostics: Optional[dict[str, Any]] = None,
+    noise: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    """Perform one stochastic reverse step x_t -> x_{t-1}."""
+    """Perform one stochastic reverse step x_t -> x_{t-1}.
+
+    ``noise`` is optional and exists so deterministic formula checks can call
+    the production sampler with a fixed random term. Normal sampling keeps
+    the original behavior when it is omitted.
+    """
 
     if isinstance(t, int):
         t = torch.full((xt.shape[0],), t, device=xt.device, dtype=torch.long)
@@ -111,15 +132,27 @@ def p_sample(
             - torch.sqrt(1.0 / alpha_bar_t - 1.0) * predicted_noise
         )
         if diagnostics is not None:
+            xt_stats = _abs_summary(xt)
+            pred_x0_stats = _abs_summary(pred_x0)
+            pred_noise_stats = _abs_summary(predicted_noise)
             diagnostics.setdefault("steps", []).append(
                 {
                     "t": int(t[0].item()),
-                    "xt_abs_max": float(xt.detach().abs().max().cpu()),
-                    "pred_x0_abs_max": float(pred_x0.detach().abs().max().cpu()),
+                    "xt_abs_median": xt_stats["median"],
+                    "xt_abs_p95": xt_stats["p95"],
+                    "xt_abs_p99": xt_stats["p99"],
+                    "xt_abs_max": xt_stats["max"],
+                    "pred_x0_abs_median": pred_x0_stats["median"],
+                    "pred_x0_abs_p95": pred_x0_stats["p95"],
+                    "pred_x0_abs_p99": pred_x0_stats["p99"],
+                    "pred_x0_abs_max": pred_x0_stats["max"],
                     "pred_x0_outside_fraction": float(
                         (pred_x0.detach().abs() > 1.0).float().mean().cpu()
                     ),
-                    "pred_noise_abs_max": float(predicted_noise.detach().abs().max().cpu()),
+                    "pred_noise_abs_median": pred_noise_stats["median"],
+                    "pred_noise_abs_p95": pred_noise_stats["p95"],
+                    "pred_noise_abs_p99": pred_noise_stats["p99"],
+                    "pred_noise_abs_max": pred_noise_stats["max"],
                 }
             )
         if clip_denoised:
@@ -138,7 +171,10 @@ def p_sample(
         )
 
     variance_t = _extract(schedule.posterior_variance, t, xt.shape)
-    noise = torch.randn_like(xt)
+    if noise is None:
+        noise = torch.randn_like(xt)
+    elif noise.shape != xt.shape:
+        raise ValueError("noise and xt must have identical shapes")
     nonzero_mask = (t != 0).to(dtype=xt.dtype).reshape(xt.shape[0], *([1] * (xt.ndim - 1)))
     return mean + nonzero_mask * torch.sqrt(variance_t.clamp(min=0.0)) * noise
 

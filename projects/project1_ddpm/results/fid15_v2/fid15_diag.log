@@ -1,0 +1,21 @@
+Thu Sep 17 11:20:07 CST 2026
+{
+  "name": "cosine",
+  "T": 1000,
+  "beta_min": 4.124641418457031e-05,
+  "beta_max": 0.9990000128746033,
+  "alpha_bar_final": 2.4288902000790813e-09,
+  "posterior_variance_t0": 0.0
+}
+Schedule diagnostics written to runs/fid15_v2_full_cosine_default/ckpt/schedule_diagnostics_noclipx0.json
+{
+  "name": "cosine",
+  "T": 1000,
+  "beta_min": 4.124641418457031e-05,
+  "beta_max": 0.9990000128746033,
+  "alpha_bar_final": 2.4288902000790813e-09,
+  "posterior_variance_t0": 0.0
+}
+Schedule diagnostics written to runs/fid15_v2_full_cosine_default/ckpt/schedule_diagnostics_clipx0.json
+Thu Sep 17 11:22:22 CST 2026
+DIAG_COMPLETE
