@@ -196,9 +196,27 @@ def _lr_for_update(cfg: Dict[str, Any], step: int) -> float:
         return base_lr * (step + 1) / warmup_steps
     if schedule_name in {"constant", "warmup_constant"}:
         return base_lr
+    if schedule_name == "warmup_late_cosine":
+        total_steps = int(cfg["training"].get("max_steps", 0))
+        late_decay_start = int(
+            optimizer_cfg.get("late_decay_start_step", round(total_steps * 0.75))
+        )
+        if total_steps <= 0 or not 0 <= late_decay_start < total_steps:
+            raise ValueError(
+                "optimizer.late_decay_start_step must be in [0, training.max_steps)"
+            )
+        min_lr = float(optimizer_cfg.get("min_lr", 0.0))
+        if not 0.0 <= min_lr <= base_lr:
+            raise ValueError("optimizer.min_lr must satisfy 0 <= min_lr <= optimizer.lr")
+        if step < late_decay_start:
+            return base_lr
+        decay_steps = max(total_steps - late_decay_start - 1, 1)
+        progress = min(max((step - late_decay_start) / decay_steps, 0.0), 1.0)
+        return min_lr + 0.5 * (base_lr - min_lr) * (1.0 + math.cos(math.pi * progress))
     if schedule_name != "warmup_cosine":
         raise ValueError(
-            "optimizer.lr_schedule must be 'constant', 'warmup_constant', or 'warmup_cosine'"
+            "optimizer.lr_schedule must be 'constant', 'warmup_constant', "
+            "'warmup_cosine', or 'warmup_late_cosine'"
         )
     total_steps = int(cfg["training"].get("max_steps", 0))
     if total_steps <= warmup_steps:
