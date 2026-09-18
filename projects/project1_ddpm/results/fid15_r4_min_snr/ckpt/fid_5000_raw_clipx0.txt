@@ -1,0 +1,7 @@
+FID: 29.1437
+num_samples: 5000
+real_split: train
+weights: raw
+checkpoint: runs/fid15_r4_min_snr/ckpt/final.pt
+seed: 44
+clip_denoised: True
