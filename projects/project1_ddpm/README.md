@@ -228,6 +228,8 @@ R6 相比 R5 的最佳结果高 `0.4177`，说明在当前 200 epoch、学习率
 Min-SNR-$\\gamma=5$ 没有带来收益。完整结果、配置、loss 历史、样本网格和日志见
 [`results/fid15_final/`](results/fid15_final/)，大型 checkpoint 见
 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)。
+其中 `best_grid_ema9999_clipx0.png` 与各自当前最佳 FID 权重一致；`final_grid_ema9995_clipx0.png`
+保留为训练完成时的 EMA 0.9995 参考网格。
 
 ## FID≤15 最终改进运行：R4 Min-SNR
 

@@ -37,7 +37,8 @@ R6 与 R5 保持模型、schedule、学习率、seed、训练预算和评估协�
 - `r5_late_decay/fid_comparison_clipx0.md`、`r6_min_snr_late_decay/fid_comparison_clipx0.md`：EMA/raw 对照；
 - `fid_*.txt`：逐个 FID 的原始记录；
 - `loss_history.csv`、`loss_curve.png`：训练 loss 历史和曲线；
-- `final_grid_ema9995_clipx0.png`：统一生成的最终样本网格；
+- `best_grid_ema9999_clipx0.png`：与当前最佳 FID EMA 0.9999 对应的 64 张裁剪样本网格；
+- `final_grid_ema9995_clipx0.png`：训练完成时按默认命令生成的 EMA 0.9995 参考网格；
 - `samples/`：训练过程中的周期样本网格；
 - `logs/`：R5/R6 训练与恢复评估日志。
 

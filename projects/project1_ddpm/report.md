@@ -316,3 +316,6 @@ R5/R6 的配置、原始 FID 文件、loss history、loss 曲线、周期样本�
 日志保存在 `results/fid15_final/`。最终 checkpoint 与轻量结果归档通过
 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)
 发布。
+另外，已按最佳 EMA 0.9999 权重补生成两组 64 张裁剪样本网格；它们分别保存为
+`r5_late_decay/best_grid_ema9999_clipx0.png` 和
+`r6_min_snr_late_decay/best_grid_ema9999_clipx0.png`，避免使用 EMA 0.9995 网格代表最佳 FID。
