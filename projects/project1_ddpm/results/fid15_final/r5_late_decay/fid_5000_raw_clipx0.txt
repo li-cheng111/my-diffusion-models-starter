@@ -1,0 +1,7 @@
+FID: 16.1927
+num_samples: 5000
+real_split: train
+weights: raw
+checkpoint: runs/fid15_r5_late_decay/ckpt/final.pt
+seed: 44
+clip_denoised: True

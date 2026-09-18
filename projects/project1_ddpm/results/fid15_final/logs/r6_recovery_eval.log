@@ -1,0 +1,5 @@
+FID @ 5000 samples (EMA_0.9990, real=train): 17.2559
+FID @ 5000 samples (EMA_0.9995, real=train): 16.9445
+FID @ 5000 samples (EMA_0.9999, real=train): 15.8562
+FID @ 5000 samples (raw, real=train): 17.8510
+EMA comparison written to runs/fid15_r6_min_snr_late_decay/ckpt/fid_comparison_clipx0.md

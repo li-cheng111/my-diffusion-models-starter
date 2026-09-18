@@ -283,3 +283,36 @@ R3 轨迹诊断补充了 median、P95、P99 和 max。例如无裁剪 t=999 的 
 `90.15/280.88/385.49/964.98`，裁剪 t=0 后的 P95/P99 约为 `0.94/0.99`。这说明 cosine
 末端小 $α\_bar$ 会放大 epsilon 预测误差；最大值异常本身不能证明 schedule 实现错误，
 但也说明逐步裁剪是当前采样协议下必要的稳定化操作。
+
+## R5/R6：最终 200 epoch 复核
+
+在 v2 和 R4 的基础上，继续完成两组独立的严格 200 epoch 实验。两组均使用完整 U-Net、
+cosine beta schedule、seed 44、batch size 128、5,000 步 warmup、后期 cosine learning-rate
+decay（从 step 58,500 开始由 `2e-4` 衰减到 `2e-5`）、EMA bank `0.999/0.9995/0.9999`，
+并固定用 `train` split 前 5,000 张真实图和 5,000 张生成图、seed 44、裁剪预测 $x_0$ 评估。
+
+R5 使用 uniform epsilon MSE，R6 只将训练损失替换为 Min-SNR-$\\gamma=5$，其余变量保持一致。
+
+| 实验 | 训练损失 | EMA 0.9990 | EMA 0.9995 | EMA 0.9999 | raw |
+|---|---|---:|---:|---:|---:|
+| R5 late decay | uniform MSE | 16.3823 | 16.2361 | **15.4385** | 16.1927 |
+| R6 late decay | Min-SNR-$\\gamma=5$ | 17.2559 | 16.9445 | **15.8562** | 17.8510 |
+
+R5 训练耗时约 155.0 分钟，R6 训练耗时约 153.1 分钟；评估的 EMA 对照是在训练完成后
+按固定协议逐组生成。当前最佳为 R5 EMA 0.9999 的 `15.4385`，距离目标差 `0.4385`，
+因此结果仍未达到 FID≤15。R6 最佳值比 R5 高 `0.4177`，表明 Min-SNR-$\\gamma=5$ 在
+当前模型容量、噪声 schedule、学习率后期衰减和训练预算下没有带来改善。
+
+这两组结果也补充了三个判断：
+
+1. EMA 0.9999 在最终 checkpoint 上优于 0.999 和 0.9995，说明模型后期更新幅度仍然较大，
+   更长时间常数的平均可能抑制了采样噪声；
+2. R5 的 raw FID 为 16.1927，而 R6 的 raw FID 为 17.8510，Min-SNR 变体不仅没有改善 EMA，
+   raw 权重也更差，因此不能把差异归因于 EMA 选择；
+3. R5 与目标的差距只有约 0.44，但仍应通过同一固定协议确认，不能用更换 real split、seed
+   或生成数量的方式宣称达标。
+
+R5/R6 的配置、原始 FID 文件、loss history、loss 曲线、周期样本、最终样本网格和 AutoDL
+日志保存在 `results/fid15_final/`。最终 checkpoint 与轻量结果归档通过
+[`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)
+发布。

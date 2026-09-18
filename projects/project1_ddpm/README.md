@@ -212,6 +212,23 @@ FID 改进实验的最终 EMA checkpoint、各阶段 checkpoint 和原始 source
 请从对应 Release 下载。仓库中保留可复核的 FID 文本、配置、loss history、loss 曲线、最终样本网格
 和实验摘要。
 
+## R5/R6 最终复核结果
+
+在 R5、R6 中保持完整 U-Net、cosine beta、seed 44、200 epoch、约 78,000 次有效更新和固定
+`train` 前 5,000 张真实图像的评估协议。两组均使用 5,000 张生成图像、裁剪预测 `x0`，并比较
+EMA 0.999、0.9995、0.9999 与 raw：
+
+| 实验 | 训练损失 | EMA 0.9990 | EMA 0.9995 | EMA 0.9999 | raw |
+|---|---|---:|---:|---:|---:|
+| R5 late decay | uniform MSE | 16.3823 | 16.2361 | **15.4385** | 16.1927 |
+| R6 late decay | Min-SNR-$\\gamma=5$ | 17.2559 | 16.9445 | **15.8562** | 17.8510 |
+
+当前最佳为 R5 EMA 0.9999 的 `15.4385`，距离 FID≤15 仍差 `0.4385`，所以本轮没有达标。
+R6 相比 R5 的最佳结果高 `0.4177`，说明在当前 200 epoch、学习率和 cosine beta 设置下，
+Min-SNR-$\\gamma=5$ 没有带来收益。完整结果、配置、loss 历史、样本网格和日志见
+[`results/fid15_final/`](results/fid15_final/)，大型 checkpoint 见
+[`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)。
+
 ## FID≤15 最终改进运行：R4 Min-SNR
 
 最终执行方案只新增一组训练，不改变 R3 的 200 epoch、78,000 次有效更新、cosine
