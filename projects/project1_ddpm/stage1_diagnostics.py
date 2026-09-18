@@ -288,6 +288,27 @@ def main() -> None:
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--fid_num_samples", type=int, default=5000)
     parser.add_argument("--fid_batch_size", type=int, default=64)
+    parser.add_argument(
+        "--only_fid_experiment",
+        choices=["all", "R3", "R5"],
+        default="all",
+        help="When running FID, restrict it to one checkpoint label for resumable runs.",
+    )
+    parser.add_argument(
+        "--skip_fid",
+        action="store_true",
+        help="Skip model-vs-real FID and run only the other diagnostics.",
+    )
+    parser.add_argument(
+        "--skip_calibration",
+        action="store_true",
+        help="Skip real-vs-real calibration.",
+    )
+    parser.add_argument(
+        "--skip_timestep",
+        action="store_true",
+        help="Skip supervised timestep diagnostics.",
+    )
     parser.add_argument("--stability_seeds", type=int, nargs="+", default=[44, 45, 46])
     parser.add_argument("--calibration_count", type=int, default=5000)
     parser.add_argument("--diagnostic_images", type=int, default=256)
@@ -319,84 +340,95 @@ def main() -> None:
     )
 
     stability_rows: list[dict[str, Any]] = []
-    for label, ckpt_path, ema_decay in (
-        ("R3", args.r3_ckpt, args.r3_ema_decay),
-        ("R5", args.r5_ckpt, args.r5_ema_decay),
-    ):
-        checkpoint = torch.load(ckpt_path, map_location="cpu")
-        model, schedule, cfg, weight_type = _load_model(
-            checkpoint, True, device, ema_decay=ema_decay
+    if not args.skip_fid:
+        experiments = (
+            ("R3", args.r3_ckpt, args.r3_ema_decay),
+            ("R5", args.r5_ckpt, args.r5_ema_decay),
         )
-        real_subset = _dataset_subset(dataset, 0, args.fid_num_samples)
-        for seed in args.stability_seeds:
-            seed_everything(seed)
-            score = fid_model_against_real_subset(
-                model,
-                schedule,
-                real_subset,
-                args.fid_num_samples,
-                args.fid_batch_size,
-                device,
-                cfg["model"]["image_size"],
-                cfg["model"]["in_channels"],
-                clip_denoised=True,
+        if args.only_fid_experiment != "all":
+            experiments = tuple(
+                item for item in experiments if item[0] == args.only_fid_experiment
             )
-            row = {
-                "experiment": label,
-                "checkpoint": ckpt_path,
-                "ema_decay": ema_decay,
-                "weights": weight_type,
-                "seed": seed,
-                "real_split": "train",
-                "real_start": 0,
-                "real_samples": args.fid_num_samples,
-                "generated_samples": args.fid_num_samples,
-                "clip_denoised": True,
-                "fid": score,
-            }
-            stability_rows.append(row)
-            print(f"[{label} seed={seed}] FID={score:.4f}", flush=True)
-        del model, schedule
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
+        for label, ckpt_path, ema_decay in experiments:
+            checkpoint = torch.load(ckpt_path, map_location="cpu")
+            model, schedule, cfg, weight_type = _load_model(
+                checkpoint, True, device, ema_decay=ema_decay
+            )
+            real_subset = _dataset_subset(dataset, 0, args.fid_num_samples)
+            for seed in args.stability_seeds:
+                seed_everything(seed)
+                score = fid_model_against_real_subset(
+                    model,
+                    schedule,
+                    real_subset,
+                    args.fid_num_samples,
+                    args.fid_batch_size,
+                    device,
+                    cfg["model"]["image_size"],
+                    cfg["model"]["in_channels"],
+                    clip_denoised=True,
+                )
+                row = {
+                    "experiment": label,
+                    "checkpoint": ckpt_path,
+                    "ema_decay": ema_decay,
+                    "weights": weight_type,
+                    "seed": seed,
+                    "real_split": "train",
+                    "real_start": 0,
+                    "real_samples": args.fid_num_samples,
+                    "generated_samples": args.fid_num_samples,
+                    "clip_denoised": True,
+                    "fid": score,
+                }
+                stability_rows.append(row)
+                print(f"[{label} seed={seed}] FID={score:.4f}", flush=True)
+            del model, schedule
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
 
-    _write_csv(output_dir / "fid_stability.csv", stability_rows)
-    calibration = real_vs_real_calibration(
-        dataset,
-        first_start=0,
-        second_start=args.calibration_count,
-        count=args.calibration_count,
-        batch_size=args.fid_batch_size,
-        device=device,
-        in_channels=r5_cfg["model"]["in_channels"],
-    )
-    (output_dir / "real_calibration.json").write_text(json.dumps(calibration, indent=2))
-    print(
-        f"[calibration] real first {args.calibration_count} vs next {args.calibration_count} "
-        f"FID={calibration['fid_first_vs_second']:.4f}",
-        flush=True,
-    )
+        _write_csv(output_dir / "fid_stability.csv", stability_rows)
+
+    if not args.skip_calibration:
+        calibration = real_vs_real_calibration(
+            dataset,
+            first_start=0,
+            second_start=args.calibration_count,
+            count=args.calibration_count,
+            batch_size=args.fid_batch_size,
+            device=device,
+            in_channels=r5_cfg["model"]["in_channels"],
+        )
+        (output_dir / "real_calibration.json").write_text(
+            json.dumps(calibration, indent=2)
+        )
+        print(
+            f"[calibration] real first {args.calibration_count} vs next {args.calibration_count} "
+            f"FID={calibration['fid_first_vs_second']:.4f}",
+            flush=True,
+        )
 
     timestep_files: list[str] = []
-    for label, ckpt_path, ema_decay in (
-        ("R3", args.r3_ckpt, args.r3_ema_decay),
-        ("R5", args.r5_ckpt, args.r5_ema_decay),
-    ):
-        for split in ("train", "test"):
-            result = timestep_diagnostics(
-                ckpt_path,
-                args.data_root,
-                split,
-                args.diagnostic_images,
-                args.diagnostic_batch_size,
-                seed=44,
-                timesteps=args.diagnostic_timesteps,
-                ema_decay=ema_decay,
-            )
-            path = output_dir / f"timestep_{label.lower()}_{split}.json"
-            path.write_text(json.dumps(result, indent=2))
-            timestep_files.append(str(path))
-            print(f"[timestep] wrote {path}", flush=True)
+    if not args.skip_timestep:
+        for label, ckpt_path, ema_decay in (
+            ("R3", args.r3_ckpt, args.r3_ema_decay),
+            ("R5", args.r5_ckpt, args.r5_ema_decay),
+        ):
+            for split in ("train", "test"):
+                result = timestep_diagnostics(
+                    ckpt_path,
+                    args.data_root,
+                    split,
+                    args.diagnostic_images,
+                    args.diagnostic_batch_size,
+                    seed=44,
+                    timesteps=args.diagnostic_timesteps,
+                    ema_decay=ema_decay,
+                )
+                path = output_dir / f"timestep_{label.lower()}_{split}.json"
+                path.write_text(json.dumps(result, indent=2))
+                timestep_files.append(str(path))
+                print(f"[timestep] wrote {path}", flush=True)
 
     summary = {
         "protocol": {
