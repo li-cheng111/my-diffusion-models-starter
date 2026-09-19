@@ -326,6 +326,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
     grad_accum_steps = max(1, int(training_cfg.get("gradient_accumulation_steps", 1)))
     loss_weighting = str(training_cfg.get("loss_weighting", "uniform"))
     min_snr_gamma = float(training_cfg.get("min_snr_gamma", 5.0))
+    prediction_type = str(training_cfg.get("prediction_type", "epsilon"))
     history: list[Dict[str, float]] = []
     start_time = time.time()
     last_epoch = start_epoch - 1
@@ -348,6 +349,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                     schedule,
                     loss_weighting=loss_weighting,
                     min_snr_gamma=min_snr_gamma,
+                    prediction_type=prediction_type,
                 ) / grad_accum_steps
 
             micro_step += 1
@@ -451,6 +453,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                     ),
                     schedule,
                     device=device,
+                    prediction_type=prediction_type,
                 )
                 vutils.save_image(
                     denormalize(samples),

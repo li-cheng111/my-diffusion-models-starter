@@ -37,6 +37,7 @@ def compute_fid(
     image_size: int,
     in_channels: int,
     clip_denoised: bool = False,
+    prediction_type: str = "epsilon",
 ) -> float:
     try:
         from torchmetrics.image.fid import FrechetInceptionDistance
@@ -70,6 +71,7 @@ def compute_fid(
             schedule,
             device=device,
             clip_denoised=clip_denoised,
+            prediction_type=prediction_type,
         )
         fid.update(_to_uint8_rgb(samples, in_channels), real=False)
         generated += current_batch
@@ -156,6 +158,7 @@ def main() -> None:
     cfg = checkpoint["config"]
     image_size = cfg["model"]["image_size"]
     in_channels = cfg["model"]["in_channels"]
+    prediction_type = str(cfg.get("training", {}).get("prediction_type", "epsilon"))
     if args.compare_ema and args.no_ema:
         parser.error("--compare_ema and --no_ema cannot be used together")
     if args.ema_decay is not None and args.no_ema:
@@ -194,6 +197,7 @@ def main() -> None:
             image_size,
             in_channels,
             clip_denoised=args.clip_denoised,
+            prediction_type=prediction_type,
         )
         results[weight_type] = score
         clip_suffix = "_clipx0" if args.clip_denoised else "_noclipx0"
@@ -203,6 +207,7 @@ def main() -> None:
             f"num_samples: {args.num_samples}\n"
             f"real_split: {args.real_split}\n"
             f"weights: {weight_type}\n"
+            f"prediction_type: {prediction_type}\n"
             f"checkpoint: {args.ckpt}\n"
             f"seed: {args.seed}\n"
             f"clip_denoised: {args.clip_denoised}\n"

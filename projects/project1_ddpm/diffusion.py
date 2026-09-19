@@ -67,8 +67,9 @@ def p_losses(
     schedule: DDPMSchedule,
     loss_weighting: str = "uniform",
     min_snr_gamma: float = 5.0,
+    prediction_type: str = "epsilon",
 ) -> torch.Tensor:
-    """Compute the DDPM noise-prediction MSE.
+    """Compute the DDPM reconstruction loss for epsilon or v prediction.
 
     ``min_snr`` implements the Min-SNR-gamma weighting for epsilon
     prediction.  The default remains the original uniform objective so
@@ -76,6 +77,14 @@ def p_losses(
     The weighting is computed in float32 because cosine schedules can have
     extremely small terminal alpha-bars.
     """
+
+    prediction_type = prediction_type.lower().replace("-", "_")
+    if prediction_type in {"v", "v_prediction", "velocity"}:
+        prediction_type = "v_prediction"
+    elif prediction_type in {"epsilon", "eps", "noise"}:
+        prediction_type = "epsilon"
+    else:
+        raise ValueError("prediction_type must be 'epsilon' or 'v_prediction'")
 
     weighting = loss_weighting.lower()
     if weighting not in {"uniform", "min_snr"}:
@@ -91,13 +100,21 @@ def p_losses(
         schedule.sqrt_one_minus_alphas_cumprod,
         noise=noise,
     )
-    predicted_noise = model(xt, t)
-    if predicted_noise.shape != noise.shape:
+    prediction = model(xt, t)
+    if prediction.shape != noise.shape:
         raise ValueError(
-            "model output must have the same shape as the injected noise: "
-            f"{tuple(predicted_noise.shape)} != {tuple(noise.shape)}"
+            "model output must have the same shape as the training target: "
+            f"{tuple(prediction.shape)} != {tuple(noise.shape)}"
         )
-    per_example = F.mse_loss(predicted_noise, noise, reduction="none")
+    if prediction_type == "v_prediction":
+        sqrt_alpha_bar = _extract(schedule.sqrt_alphas_cumprod, t, x0.shape)
+        sqrt_one_minus_alpha_bar = _extract(
+            schedule.sqrt_one_minus_alphas_cumprod, t, x0.shape
+        )
+        target = sqrt_alpha_bar * noise - sqrt_one_minus_alpha_bar * x0
+    else:
+        target = noise
+    per_example = F.mse_loss(prediction, target, reduction="none")
     per_example = per_example.flatten(start_dim=1).mean(dim=1)
     if weighting == "uniform":
         return per_example.mean()
@@ -118,6 +135,7 @@ def p_sample(
     clip_denoised: bool = False,
     diagnostics: Optional[dict[str, Any]] = None,
     noise: Optional[torch.Tensor] = None,
+    prediction_type: str = "epsilon",
 ) -> torch.Tensor:
     """Perform one stochastic reverse step x_t -> x_{t-1}.
 
@@ -137,7 +155,15 @@ def p_sample(
     if t.ndim != 1 or t.shape[0] != xt.shape[0]:
         raise ValueError("t must contain one timestep per sample")
 
-    predicted_noise = model(xt, t)
+    prediction_type = prediction_type.lower().replace("-", "_")
+    if prediction_type in {"v", "v_prediction", "velocity"}:
+        prediction_type = "v_prediction"
+    elif prediction_type in {"epsilon", "eps", "noise"}:
+        prediction_type = "epsilon"
+    else:
+        raise ValueError("prediction_type must be 'epsilon' or 'v_prediction'")
+
+    prediction = model(xt, t)
     beta_t = _extract(schedule.betas, t, xt.shape)
     sqrt_recip_alpha_t = _extract(schedule.sqrt_recip_alphas, t, xt.shape)
     sqrt_one_minus_alpha_bar_t = _extract(
@@ -145,16 +171,32 @@ def p_sample(
     )
 
     pred_x0 = None
+    alpha_bar_t = None
+    if prediction_type == "v_prediction":
+        alpha_bar_t = _extract(schedule.alphas_cumprod, t, xt.shape)
+        sqrt_alpha_bar_t = torch.sqrt(alpha_bar_t)
+        sqrt_one_minus_alpha_bar_t = _extract(
+            schedule.sqrt_one_minus_alphas_cumprod, t, xt.shape
+        )
+        predicted_noise = sqrt_one_minus_alpha_bar_t * xt + sqrt_alpha_bar_t * prediction
+    else:
+        predicted_noise = prediction
     if clip_denoised or diagnostics is not None:
         # Convert epsilon prediction to x_0, constrain it to the data range,
         # and then use q(x_{t-1} | x_t, x_0) for the reverse mean. The noisy
         # state xt is intentionally not clipped.
-        alpha_bar_t = _extract(schedule.alphas_cumprod, t, xt.shape)
+        if alpha_bar_t is None:
+            alpha_bar_t = _extract(schedule.alphas_cumprod, t, xt.shape)
         alpha_bar_prev_t = _extract(schedule.alphas_cumprod_prev, t, xt.shape)
-        pred_x0 = (
-            torch.rsqrt(alpha_bar_t) * xt
-            - torch.sqrt(1.0 / alpha_bar_t - 1.0) * predicted_noise
-        )
+        if prediction_type == "v_prediction":
+            pred_x0 = torch.sqrt(alpha_bar_t) * xt - torch.sqrt(
+                1.0 - alpha_bar_t
+            ) * prediction
+        else:
+            pred_x0 = (
+                torch.rsqrt(alpha_bar_t) * xt
+                - torch.sqrt(1.0 / alpha_bar_t - 1.0) * predicted_noise
+            )
         if diagnostics is not None:
             xt_stats = _abs_summary(xt)
             pred_x0_stats = _abs_summary(pred_x0)
@@ -211,6 +253,7 @@ def p_sample_loop(
     device: Optional[torch.device] = None,
     clip_denoised: bool = False,
     diagnostics: Optional[dict[str, Any]] = None,
+    prediction_type: str = "epsilon",
 ) -> torch.Tensor:
     """Generate a batch by applying all T reverse steps."""
 
@@ -228,5 +271,6 @@ def p_sample_loop(
             schedule,
             clip_denoised=clip_denoised,
             diagnostics=diagnostics,
+            prediction_type=prediction_type,
         )
     return x

@@ -88,6 +88,7 @@ def main() -> None:
 
     image_size = cfg["model"]["image_size"]
     channels = cfg["model"]["in_channels"]
+    prediction_type = str(cfg.get("training", {}).get("prediction_type", "epsilon"))
     all_samples = []
     generated = 0
     while generated < args.num_samples:
@@ -98,6 +99,7 @@ def main() -> None:
             schedule,
             device=device,
             clip_denoised=args.clip_denoised,
+            prediction_type=prediction_type,
         )
         samples = denormalize(samples).cpu()
         all_samples.append(samples)
