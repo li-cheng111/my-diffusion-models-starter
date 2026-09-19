@@ -238,7 +238,9 @@ R7 保持 R5 的完整 U-Net、cosine beta、200 epoch、78,000 steps、seed 44�
 EMA 0.9995=`18.8484`、EMA 0.9999=`17.4808`、raw=`19.2896`。因此 R7 未改善 FID，
 最佳结果仍是 R5 EMA 0.9999 的 `15.4385`，FID≤15 尚未达到。R7 的完整配置、结果文本、
 日志、loss 曲线和最佳样本网格见 [`results/fid15_r7_v_prediction/`](results/fid15_r7_v_prediction/)。
-R7 大型 checkpoint 通过项目 Release 提供，不进入普通 Git。
+R7 大型 checkpoint 通过 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)
+提供，其中 [`r7_v_prediction_final.pt`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/challenge-v1/r7_v_prediction_final.pt)
+为复现 checkpoint，不进入普通 Git。
 
 ## FID≤15 最终改进运行：R4 Min-SNR
 

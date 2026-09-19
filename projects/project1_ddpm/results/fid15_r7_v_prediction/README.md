@@ -73,7 +73,7 @@ python sample.py \
 ```
 
 大型 checkpoint 不进入普通 Git；复现实验使用的 `final.pt` 应从项目对应的 GitHub
-Release asset 下载。
+Release asset 下载：[`r7_v_prediction_final.pt`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/challenge-v1/r7_v_prediction_final.pt)。
 
 ## 结论
 
