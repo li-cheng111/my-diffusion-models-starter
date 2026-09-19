@@ -1,0 +1,29 @@
+{
+  "protocol": {
+    "real_dataset": "CIFAR-10 train",
+    "official_subset": "first 5000 images",
+    "random_subsets": "4 disjoint class-stratified subsets, 500 images per class",
+    "subset_seed": 20260919,
+    "generated_samples": 5000,
+    "generated_seeds": [44, 45, 46],
+    "clip_denoised": true,
+    "fid_feature": 2048,
+    "no_training_performed": true
+  },
+  "experiments": {
+    "R3": {
+      "ema_decay": 0.9995,
+      "all_15_cells": {"mean": 15.5095667, "sample_std": 0.1103687, "min": 15.3157, "max": 15.6866, "range": 0.3709},
+      "official_first5000_3_seeds": {"mean": 15.5312333, "sample_std": 0.1276725, "min": 15.4022, "max": 15.6575, "range": 0.2553},
+      "random_subsets_12_cells": {"mean": 15.50415, "sample_std": 0.1112640, "min": 15.3157, "max": 15.6866, "range": 0.3709}
+    },
+    "R5": {
+      "ema_decay": 0.9999,
+      "all_15_cells": {"mean": 15.35904, "sample_std": 0.1270201, "min": 15.1445, "max": 15.5563, "range": 0.4118},
+      "official_first5000_3_seeds": {"mean": 15.3716333, "sample_std": 0.1419490, "min": 15.2086, "max": 15.4678, "range": 0.2592},
+      "random_subsets_12_cells": {"mean": 15.3558917, "sample_std": 0.1296793, "min": 15.1445, "max": 15.5563, "range": 0.4118}
+    }
+  },
+  "lowest_cell": {"experiment": "R5", "subset": "stratified_1", "generated_seed": 46, "fid": 15.1445},
+  "formal_protocol_result": {"experiment": "R5", "real_subset": "official_first5000", "generated_seed": 44, "fid": 15.4385}
+}
