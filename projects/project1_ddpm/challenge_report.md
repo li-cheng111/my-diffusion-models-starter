@@ -1,5 +1,7 @@
 # 项目 1 挑战档技术报告
 
+> 全部 Project 1 的统一方法与结果分析见 [`PROJECT1_COMPLETE_REPORT.md`](PROJECT1_COMPLETE_REPORT.md)。
+
 > 本文按八页技术报告组织，内容基于已完成的六组真实实验和仓库结果文件。大型 checkpoint 与中间样本保存在 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)。
 
 ## 第 1 页：摘要与研究问题

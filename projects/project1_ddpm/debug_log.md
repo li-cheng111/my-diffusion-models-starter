@@ -1,5 +1,7 @@
 # 调试日志
 
+> 统一版方法、实验结果和根因分析见 [`PROJECT1_COMPLETE_REPORT.md`](PROJECT1_COMPLETE_REPORT.md)；本文件仅保留逐条调试证据。
+
 ## 条目 1——AutoDL 克隆 GitHub 仓库
 
 - 状态：已解决

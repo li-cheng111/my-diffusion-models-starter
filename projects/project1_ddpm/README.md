@@ -2,6 +2,11 @@
 
 本目录包含项目 1 基础档、进阶档和挑战档的源码、配置、静态测试、结果与实验说明。实现目标是用 PyTorch 手写一个不依赖 `diffusers` 或 `lucidrains` 的无条件 DDPM。
 
+完整的方法、实验矩阵、FID 协议、诊断结论和复现入口已统一整理到
+[`PROJECT1_COMPLETE_REPORT.md`](PROJECT1_COMPLETE_REPORT.md)。本文档保留快速开始和文件索引；
+`report.md`、`challenge_report.md`、`debug_log.md` 及各结果目录中的 README 保留为阶段性和
+审计记录。
+
 ## 当前提交状态
 
 基础档 MNIST 实验、进阶档 CIFAR-10 单次实验、挑战档 linear/cosine × seed 42/43/44 六组实验均已完成。FID≤15 v2 的三组严格 200 epoch 实验也已完成；小型结果、摘要和最终样本网格在仓库中，大型 checkpoint 与中间样本在 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1) 或 AutoDL 实验目录中。

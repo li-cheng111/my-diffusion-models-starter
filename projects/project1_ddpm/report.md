@@ -1,5 +1,7 @@
 # 项目 1：从零实现 DDPM
 
+> 统一版总报告见 [`PROJECT1_COMPLETE_REPORT.md`](PROJECT1_COMPLETE_REPORT.md)；本文件保留原始阶段报告和历史结果叙述。
+
 ## 当前状态
 
 本仓库已完成项目 1 基础档、进阶档和挑战档的源码、配置、静态测试、结果和实验文档。MNIST 基线与 CIFAR-10 实验均在 AutoDL 上完成真实训练、采样和 FID 评估。本报告只记录实际得到的结果；原始进阶档单次 linear EMA FID 为 19.2879，挑战档六组实验的汇总见 `results/challenge/summary.md`。针对 FID≤15 的独立续训实验最终 EMA FID 为 18.1490，仍未达标。
