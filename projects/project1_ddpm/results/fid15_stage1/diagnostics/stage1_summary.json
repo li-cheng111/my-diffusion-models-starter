@@ -1,0 +1,28 @@
+{
+  "protocol": {
+    "dataset": "cifar10",
+    "real_split": "train",
+    "real_start": 0,
+    "real_samples": 5000,
+    "generated_samples": 5000,
+    "clip_denoised": true,
+    "fid_seeds": [
+      44,
+      45,
+      46
+    ]
+  },
+  "fid_stability_csv": "runs/fid15_stage1/diagnostics/fid_stability.csv",
+  "real_calibration": "runs/fid15_stage1/diagnostics/real_calibration.json",
+  "timestep_files": [
+    "runs/fid15_stage1/diagnostics/timestep_r3_train.json",
+    "runs/fid15_stage1/diagnostics/timestep_r3_test.json",
+    "runs/fid15_stage1/diagnostics/timestep_r5_train.json",
+    "runs/fid15_stage1/diagnostics/timestep_r5_test.json"
+  ],
+  "interpretation": {
+    "formal_seed": 44,
+    "extra_seeds_are_diagnostic_only": true,
+    "no_training_performed": true
+  }
+}

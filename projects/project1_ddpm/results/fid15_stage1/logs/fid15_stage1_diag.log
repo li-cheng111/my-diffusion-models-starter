@@ -1,0 +1,6 @@
+[calibration] real first 5000 vs next 5000 FID=10.2039
+[timestep] wrote runs/fid15_stage1/diagnostics/timestep_r3_train.json
+[timestep] wrote runs/fid15_stage1/diagnostics/timestep_r3_test.json
+[timestep] wrote runs/fid15_stage1/diagnostics/timestep_r5_train.json
+[timestep] wrote runs/fid15_stage1/diagnostics/timestep_r5_test.json
+Stage 1 diagnostics written to runs/fid15_stage1/diagnostics

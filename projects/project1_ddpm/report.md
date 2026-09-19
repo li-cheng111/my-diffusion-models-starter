@@ -319,3 +319,37 @@ R5/R6 的配置、原始 FID 文件、loss history、loss 曲线、周期样本�
 另外，已按最佳 EMA 0.9999 权重补生成两组 64 张裁剪样本网格；它们分别保存为
 `r5_late_decay/best_grid_ema9999_clipx0.png` 和
 `r6_min_snr_late_decay/best_grid_ema9999_clipx0.png`，避免使用 EMA 0.9995 网格代表最佳 FID。
+
+## Stage 1：不重训诊断
+
+为了区分 FID 差距来自随机采样波动、评估实现还是模型本身，针对 R3 和 R5 做了三类
+不重训诊断：固定真实图像为 CIFAR-10 train split 前 5,000 张，生成 5,000 张，使用
+seed 44/45/46 和裁剪预测 `x0` 的相同协议；用真实 train 前 5,000 张与接下来 5,000 张
+做 real-vs-real FID；并对前 256 张 train/test 图像使用固定噪声，在 20 个 timestep 上
+统计 epsilon MSE、`x0` 误差和裁剪前越界像素比例。
+
+| 实验 | seed 44 | seed 45 | seed 46 | 均值 | 范围 |
+|---|---:|---:|---:|---:|---:|
+| R3 EMA 0.9995 | 15.5340 | 15.6575 | 15.4022 | 15.5312 | 0.2553 |
+| R5 EMA 0.9999 | 15.4385 | 15.4678 | 15.2086 | 15.3717 | 0.2592 |
+
+R5 相比 R3 在正式 seed 44 上改善 `0.0955`，三 seed 均值改善约 `0.1595`，但没有一次
+低于 15。real-vs-real FID 为 `10.2039`；两组真实图像的 uint8 均值为 `120.24/121.42`、
+标准差为 `64.679/64.651`，范围均为 `0–255`。因此没有证据表明当前 FID 差距主要由输入
+转换或真实数据管线错误造成。
+
+R5 的 `alpha_bar` 在 `t=999` 为约 `2.43e-9`，在 `t=998` 为约 `2.43e-6`。虽然 epsilon
+MSE 只有约 `3.6e-5`，但反推 `x0` 时会乘以 `1/sqrt(alpha_bar)`，导致 t=999 的 mean abs
+误差约 `94.43`、99.3% 像素越界，t=998 也有约 76.9% 像素越界。这是低信噪比端点的
+数值放大现象；先前独立 posterior 对照已确认 production sampler 的 mean、variance 和
+clipping 路径公式一致。因此 clipping 是必要的稳定化措施，但不能解释中间 timestep 的
+建模误差，也不能单独把 FID 从 15.4 推到 15 以下。
+
+R3/R5 的 train/test timestep 指标基本重合，例如 R5 的 `t=500` mean abs x0 error 为
+`0.128902/0.127885`，`t=800` 为 `0.224260/0.222263`。这不支持“模型只记住训练集”
+是当前 0.4 FID 差距主因的判断。更合理的结论是：当前完整 U-Net、cosine schedule、
+epsilon-prediction、200 epoch 和 EMA 组合已经接近该配置的能力上限，但在中高噪声段仍有
+足以影响 Inception 特征的系统性误差，同时 FID 本身还存在约 0.26 的 seed range。
+
+完整数据和复现脚本见 [`results/fid15_stage1/README.md`](results/fid15_stage1/README.md)
+与 [`stage1_diagnostics.py`](stage1_diagnostics.py)。

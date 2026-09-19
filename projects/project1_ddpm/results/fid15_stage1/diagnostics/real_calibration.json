@@ -1,0 +1,35 @@
+{
+  "first_start": 0,
+  "second_start": 5000,
+  "count_per_group": 5000,
+  "fid_first_vs_second": 10.203944206237793,
+  "conversion": {
+    "first": {
+      "normalized_min": -1.0,
+      "normalized_max": 1.0,
+      "denormalized_min": 0.0,
+      "denormalized_max": 1.0,
+      "denormalized_mean": 0.4723812937736511,
+      "denormalized_std": 0.25254490971565247,
+      "uint8_min": 0.0,
+      "uint8_max": 255.0,
+      "uint8_mean": 120.24154663085938,
+      "uint8_std": 64.6789779663086,
+      "samples": 5000
+    },
+    "second": {
+      "normalized_min": -1.0,
+      "normalized_max": 1.0,
+      "denormalized_min": 0.0,
+      "denormalized_max": 1.0,
+      "denormalized_mean": 0.47696012258529663,
+      "denormalized_std": 0.2524586617946625,
+      "uint8_min": 0.0,
+      "uint8_max": 255.0,
+      "uint8_mean": 121.41564178466797,
+      "uint8_std": 64.65108489990234,
+      "samples": 5000
+    }
+  },
+  "conversion_note": "real images use the same [-1,1] -> [0,1] clamp -> uint8 path as generated images"
+}

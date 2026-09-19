@@ -119,3 +119,20 @@
   当前 Min-SNR 设定没有收益。
 - 经验：AutoDL 断联期间训练和评估均通过 detached screen 保留；恢复评估时重新生成 R6 的四组
   EMA/raw FID，最终结果写入 `results/fid15_final/`，没有使用中断前可能不完整的临时输出。
+
+## 条目 11——Stage 1 FID 稳定性与 timestep 诊断
+
+- 状态：已完成；不包含训练或 checkpoint 修改。
+- 远程执行：AutoDL RTX 4090；原 screen 在实例重启后死亡，但日志保留了 R3 三个 seed 和 R5
+  seed44。随后使用可断点参数只补跑 R5 seed45/46，避免重复已完成的 FID。
+- FID：R3 EMA 0.9995 为 `15.5340/15.6575/15.4022`（seed44/45/46，均值 `15.5312`）；
+  R5 EMA 0.9999 为 `15.4385/15.4678/15.2086`（均值 `15.3717`）。两组 range 分别为
+  `0.2553/0.2592`，没有一次低于 15。
+- 校准：real train 前 5,000 张与后 5,000 张的 FID 为 `10.2039`。归一化到 uint8 的范围、
+  均值和标准差一致，没有发现明显输入转换错误。
+- timestep：R3/R5 的 train/test 曲线基本一致；cosine `t=999` 的 `alpha_bar≈2.43e-9`，
+  因此很小的 epsilon 误差会把 x0 反推误差放大到约 94，99.3% 像素越界。该现象与低信噪比
+  端点的数值条件有关，不能单独证明 schedule 公式错误；生产采样的 x0 clipping 仍是必要的。
+- 结论：随机 seed 可造成约 0.26 的 FID range，但不足以证明稳定 FID≤15；当前主要瓶颈更
+  可能在中高噪声段的建模误差、prediction target/loss weighting 与有限训练预算的组合。
+- 结果文件：`results/fid15_stage1/`，脚本为 `stage1_diagnostics.py`。

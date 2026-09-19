@@ -253,3 +253,16 @@ python -u experiment_monitor.py \\
 
 然后通过 SSH 本地端口转发访问 `http://127.0.0.1:8765/`。训练完成后脚本首先用 EMA
 0.9995、裁剪 $x_0$ 和固定 5,000/5,000 train split 评估，再补充 EMA bank 对比。
+
+## Stage 1：FID 稳定性与 timestep 诊断
+
+在不重训的前提下，新增 `stage1_diagnostics.py` 对 R3 EMA 0.9995 与 R5 EMA 0.9999
+进行 seed 44/45/46 稳定性评估、real-vs-real 校准和固定噪声的逐 timestep 误差分析。R3
+三 seed 均值为 `15.5312`，R5 为 `15.3717`；R5 的 seed 44 正式值为 `15.4385`，
+seed 46 的最低值为 `15.2086`，但没有一次低于 15。real-vs-real FID 为 `10.2039`，
+输入转换统计一致，未发现简单的数据范围或 uint8 转换错误。
+
+诊断确认 cosine schedule 在 `t=998/999` 的极小 `alpha_bar` 会放大 epsilon 误差，
+所以逐步 clipping 是必要的稳定化措施；R3/R5 的 train/test timestep 曲线基本重合，
+没有发现明显过拟合或 checkpoint 损坏。完整数据和解释见
+[`results/fid15_stage1/README.md`](results/fid15_stage1/README.md)。

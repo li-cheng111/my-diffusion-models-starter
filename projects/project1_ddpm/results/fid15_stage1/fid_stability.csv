@@ -1,0 +1,7 @@
+experiment,checkpoint,ema_decay,weights,seed,real_split,real_start,real_samples,generated_samples,clip_denoised,fid
+R3,runs/fid15_stage1_inputs/r3_full_cosine_final.pt,0.9995,EMA_0.9995,44,train,0,5000,5000,True,15.5340
+R3,runs/fid15_stage1_inputs/r3_full_cosine_final.pt,0.9995,EMA_0.9995,45,train,0,5000,5000,True,15.6575
+R3,runs/fid15_stage1_inputs/r3_full_cosine_final.pt,0.9995,EMA_0.9995,46,train,0,5000,5000,True,15.4022
+R5,runs/fid15_r5_late_decay/ckpt/final.pt,0.9999,EMA_0.9999,44,train,0,5000,5000,True,15.4385
+R5,runs/fid15_r5_late_decay/ckpt/final.pt,0.9999,EMA_0.9999,45,train,0,5000,5000,True,15.467828750610352
+R5,runs/fid15_r5_late_decay/ckpt/final.pt,0.9999,EMA_0.9999,46,train,0,5000,5000,True,15.208641052246094

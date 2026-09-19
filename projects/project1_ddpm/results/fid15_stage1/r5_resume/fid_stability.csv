@@ -1,0 +1,3 @@
+experiment,checkpoint,ema_decay,weights,seed,real_split,real_start,real_samples,generated_samples,clip_denoised,fid
+R5,runs/fid15_r5_late_decay/ckpt/final.pt,0.9999,EMA_0.9999,45,train,0,5000,5000,True,15.467828750610352
+R5,runs/fid15_r5_late_decay/ckpt/final.pt,0.9999,EMA_0.9999,46,train,0,5000,5000,True,15.208641052246094
