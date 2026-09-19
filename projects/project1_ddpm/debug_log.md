@@ -151,3 +151,16 @@
 - 结论：随机抽样确实能改变单次 FID，且变化量可以达到约 `0.18`（个别组合相对正式值）；
   但当前 30 格矩阵没有稳定跨过 15，因此不能把未达标归因于单一真实子集。正式报告继续
   使用固定协议，完整记录见 `results/fid15_stage1/real_subset/`。
+
+## 条目 13——R7 v-prediction
+
+- 状态：训练、四组 EMA/raw 评估和最佳样本网格均已完成；FID≤15 未达标。
+- 训练：完整 U-Net、cosine beta、v-prediction、200 epoch、78,000 steps，RTX 4090，
+  训练耗时 156.6 分钟。
+- 固定协议：CIFAR-10 train split 前 5,000 张真实图、5,000 张生成图、seed 44、batch 64、
+  每一步裁剪预测 `x0`。
+- FID：EMA 0.999=`19.0443`，EMA 0.9995=`18.8484`，EMA 0.9999=`17.4808`，raw=`19.2896`。
+- 结论：R7 最佳值比 R5 EMA 0.9999 的 `15.4385` 高 `2.0423`。单独切换 v-prediction
+  没有改善结果，后续应回到 R5 epsilon-prediction 基线进行单变量消融。
+- 产物：结果目录为 `results/fid15_r7_v_prediction/`；大型 checkpoint 不进入普通 Git，
+  通过 GitHub Release 提供。

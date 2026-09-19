@@ -376,3 +376,28 @@ R5、正式前 5,000 张真实图、生成 seed 44 的 `15.4385`，而不是选�
 原始 30 行记录、聚合统计和复现脚本见
 [`results/fid15_stage1/real_subset/`](results/fid15_stage1/real_subset/) 和
 [`stage1_real_subset_fid.py`](stage1_real_subset_fid.py)。
+
+## R7：v-prediction 实验
+
+为验证 v-prediction 是否能缓解 cosine schedule 低信噪比端点的 epsilon 误差放大，
+在 R5 的完整 U-Net、cosine beta、200 epoch、78,000 steps、seed 44、warmup 和后期
+learning-rate decay 设置上，仅切换训练目标与对应的采样转换。R7 训练耗时 156.6 分钟，
+并在固定的 CIFAR-10 train 前 5,000 张真实图、5,000 张生成图、seed 44、裁剪预测
+`x0` 协议下比较 EMA bank 与 raw 权重。
+
+| 实验 | prediction target | EMA 0.9990 | EMA 0.9995 | EMA 0.9999 | raw |
+|---|---|---:|---:|---:|---:|
+| R7 | v-prediction | 19.0443 | 18.8484 | **17.4808** | 19.2896 |
+
+R7 最佳结果为 EMA 0.9999 的 `17.4808`，比 R5 最佳 `15.4385` 高 `2.0423`。因此，
+在本项目的实现和固定评估协议下，v-prediction 没有带来预期收益。EMA 0.9999 仍明显
+优于 EMA 0.999/0.9995 和 raw，说明权重平均仍然有效，但改善不足以抵消 prediction
+target 切换造成的性能损失。完整配置、结果、loss、日志和样本网格见
+[`results/fid15_r7_v_prediction/`](results/fid15_r7_v_prediction/)。
+
+R7 结果进一步缩小了问题范围：R5 与 R7 使用相同的完整 U-Net、训练预算、beta schedule、
+clipping 和评估协议，主要变量是 prediction target。R7 的明显退化表明，当前瓶颈不能
+简单归因于 epsilon 参数化在端点的不稳定；更可能是 v-target 与现有 uniform loss、
+网络容量、时间步采样及 clipping 之间的组合不匹配。后续改进应以 R5 为基线，采用单变量
+消融验证 loss weighting、cosine schedule 参数、时间步重采样和更合适的采样器，避免同时
+切换 prediction target、网络结构和训练策略。

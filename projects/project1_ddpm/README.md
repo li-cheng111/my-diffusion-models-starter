@@ -231,6 +231,15 @@ Min-SNR-$\\gamma=5$ 没有带来收益。完整结果、配置、loss 历史、�
 其中 `best_grid_ema9999_clipx0.png` 与各自当前最佳 FID 权重一致；`final_grid_ema9995_clipx0.png`
 保留为训练完成时的 EMA 0.9995 参考网格。
 
+## R7 v-prediction 复核结果
+
+R7 保持 R5 的完整 U-Net、cosine beta、200 epoch、78,000 steps、seed 44、后期学习率衰减
+和裁剪 `x0` 评估协议，仅将训练目标切换为 v-prediction。四组结果为：EMA 0.999=`19.0443`、
+EMA 0.9995=`18.8484`、EMA 0.9999=`17.4808`、raw=`19.2896`。因此 R7 未改善 FID，
+最佳结果仍是 R5 EMA 0.9999 的 `15.4385`，FID≤15 尚未达到。R7 的完整配置、结果文本、
+日志、loss 曲线和最佳样本网格见 [`results/fid15_r7_v_prediction/`](results/fid15_r7_v_prediction/)。
+R7 大型 checkpoint 通过项目 Release 提供，不进入普通 Git。
+
 ## FID≤15 最终改进运行：R4 Min-SNR
 
 最终执行方案只新增一组训练，不改变 R3 的 200 epoch、78,000 次有效更新、cosine

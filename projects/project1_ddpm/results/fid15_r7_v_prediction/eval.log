@@ -1,0 +1,5 @@
+FID @ 5000 samples (EMA_0.9990, real=train): 19.0443
+FID @ 5000 samples (EMA_0.9995, real=train): 18.8484
+FID @ 5000 samples (EMA_0.9999, real=train): 17.4808
+FID @ 5000 samples (raw, real=train): 19.2896
+EMA comparison written to /root/r7_v_prediction/ckpt/fid_comparison_clipx0.md

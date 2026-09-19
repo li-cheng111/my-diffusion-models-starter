@@ -1,0 +1,8 @@
+FID: 19.2896
+num_samples: 5000
+real_split: train
+weights: raw
+prediction_type: v_prediction
+checkpoint: /root/r7_v_prediction/ckpt/final.pt
+seed: 44
+clip_denoised: True
