@@ -55,6 +55,22 @@
 - 大文件处理：六个最终 checkpoint 和中间样本未进入普通 Git，已上传到 `challenge-v1 Release`；MNIST 临时产物也以 Release 压缩附件保存。
 - 经验：三组 seed 只能提供有限的方差观察，不能将本矩阵结果外推为 schedule 的普适结论；50 轮控制组本次未运行。
 
+## 条目 9——30 epoch 学习率粗筛
+
+- 状态：已完成，作为正式训练前的筛选实验；没有宣称达到 FID≤15。
+- 实施：固定完整 U-Net、cosine beta、epsilon prediction、seed44、batch128 和 1,000 steps
+  warmup，依次测试 `5e-5、8e-5、1.2e-4、1.6e-4、2e-4、2.5e-4、3e-4`，每组 30 epoch、
+  11,730 steps。
+- 结果：使用 EMA0.9999、裁剪 x0、1,000 对 1,000 的快速 FID，结果分别为
+  `238.0244、263.5649、291.7750、284.0970、307.1943、330.7679、323.4893`。
+- 验证：7/7 任务完成；训练日志没有 OOM、NaN 或 AMP 异常。各组末尾 loss 均约 0.052，
+  但 loss 排名与 FID 排名不一致。
+- 结论：本预算下优先保留 LR05 和 LR08；其余候选暂不进入完整 200 epoch。快速 FID 的
+  样本数较小，且没有复刻 R5 后期学习率衰减，因此必须用正式协议复核。
+- 产物：轻量配置、日志、loss、样本网格和 FID 文件进入 `results/lr_screen_30ep/`；
+  LR05 最终 checkpoint 进入 `challenge-v1 Release`。AutoDL 原始粗筛目录保留，待确认
+  Release 与 GitHub 资产完整后再清理中间 checkpoint。
+
 ## 条目 7——FID≤15 续训与采样消融
 
 - 状态：已完成，目标未达标

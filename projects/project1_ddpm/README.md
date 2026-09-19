@@ -79,6 +79,20 @@ python challenge.py run \
 默认挑战矩阵为 200 轮、2 个调度策略 × 3 个随机种子，共 6 组。本次没有运行 50 轮控制组，
 因此不能从当前结果外推 50 轮下的调度策略结论。
 
+## 学习率 30-epoch 粗筛
+
+为进一步分析学习率影响，已完成 7 组 30 epoch 的快速筛选，候选为
+`5e-5 / 8e-5 / 1.2e-4 / 1.6e-4 / 2e-4 / 2.5e-4 / 3e-4`。固定协议下最低快速 FID 为
+LR05 的 `238.0244`，其次为 LR08 的 `263.5649`；其余候选为 `284.0970–330.7679`。
+这些 FID 使用 1,000 对图像，仅用于粗筛，不是正式 5,000 样本结果。各组最终 loss 都约为
+`0.052`，进一步说明 loss 排名不能替代完整采样质量评估。
+
+结果、配置、训练日志、loss 曲线和中间样本网格见
+[`results/lr_screen_30ep`](results/lr_screen_30ep)。本轮最优 LR05 的最终 checkpoint 已上传
+到 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)。
+后续若继续训练，优先复核 LR05 与 LR08，并恢复正式 200 epoch 的后期学习率衰减和 5,000
+样本 FID 协议；本轮不能据此宣称 FID≤15。
+
 ### 挑战档实际结果
 
 | 调度策略 | EMA FID | Raw FID |

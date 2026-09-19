@@ -480,5 +480,29 @@ FID `15.4385`，尚未达到 FID≤15。该差距已经通过 seed、真实子�
 
 当前最合理的技术结论是：在 200 epoch、32×32 CIFAR-10、现有完整 U-Net 和 DDPM ancestral
 sampling 下，模型在中高噪声 timestep 的学习目标和采样校正仍不够匹配。下一步应该围绕
-`R5 epsilon-prediction + loss/timestep weighting + schedule endpoint/sampler` 做可控单变量
+ `R5 epsilon-prediction + loss/timestep weighting + schedule endpoint/sampler` 做可控单变量
 实验；只有出现稳定、可复现且不依赖挑选 seed/real subset 的低于 15 结果，才能宣布达标。
+
+## 附录 A：30 epoch 学习率粗筛
+
+在完成上述实验后，AutoDL 上又完成了 7 组学习率粗筛。实验固定完整 U-Net、cosine beta、
+epsilon prediction、seed 44、batch 128 和 1,000 steps warmup；每组运行 30 epoch、
+11,730 steps，warmup 后保持常数学习率。评估固定 EMA 0.9999、裁剪预测 x0、seed 44、
+train split，并使用 1,000 张真实图与 1,000 张生成图。
+
+| 学习率 | 快速 FID | 最终 loss |
+|---:|---:|---:|
+| 5e-5 | **238.0244** | 0.05284 |
+| 8e-5 | 263.5649 | 0.05245 |
+| 1.2e-4 | 291.7750 | 0.05214 |
+| 1.6e-4 | 284.0970 | 0.05209 |
+| 2e-4 | 307.1943 | 0.05199 |
+| 2.5e-4 | 330.7679 | 0.05193 |
+| 3e-4 | 323.4893 | 0.05207 |
+
+7/7 任务正常完成，没有 OOM、NaN 或 AMP 异常。该结果支持在早期筛选阶段优先测试较低
+学习率，但不能直接推翻 R5：粗筛只运行 30 epoch、使用 1,000 样本，并且没有使用 R5 的
+后期 cosine 学习率衰减。高学习率的最终 loss 略低而 FID 更差，进一步证明训练 loss
+不是完整采样质量的充分指标。因此后续正式复核应只保留 `5e-5` 和 `8e-5`，恢复 200 epoch
+及正式 5,000 样本 FID 协议。详细日志、配置和图像见 `results/lr_screen_30ep/`，LR05
+大型 checkpoint 位于 `challenge-v1 Release`。
