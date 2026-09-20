@@ -211,3 +211,15 @@
 - 结论：50 epoch 快速筛选中 LR2.5e-4 优于 LR3.0e-4，但快速 FID 不能替代正式
   5,000/5,000 评估，也不能宣称达到 FID≤15。大型 checkpoint 不进入普通 Git，轻量结果
   见 `results/lr_screen_50ep/`。
+
+## 条目 16——LR=2.5e-4 完整 200 epoch 复核
+
+- 状态：已完成，FID≤15 未达到。
+- 实施：从 50 epoch、`19,550` 步 checkpoint 继续到 200 epoch、`78,000` 步；新增
+  `58,450` 个有效更新，训练约 122.5 分钟。
+- 正式协议：5,000 张 train split 真实图、5,000 张生成图、seed44、逐步裁剪预测 `x0`。
+- 结果：EMA0.9990=`16.0761`，EMA0.9995=`15.8897`，EMA0.9999=`15.6761`，raw=`16.8996`。
+- 对比：最佳 EMA0.9999 比 R5 的 `15.4385` 高 `0.2376`；50 epoch 快速筛选的优势没有
+  延续到完整 200 epoch。
+- 异常：少量 AMP optimizer step skip 后自动恢复；没有 OOM、NaN 或 checkpoint 损坏。
+- 产物：轻量结果进入 `results/lr25_200ep/`，最终 checkpoint 进入 `challenge-v1 Release`。

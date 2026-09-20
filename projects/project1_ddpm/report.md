@@ -438,3 +438,19 @@ uniform loss、seed44、batch128、EMA bank 和逐步裁剪 `x0` 不变。
 5,000 样本结果直接比较。两组都正常完成；在本轮筛选中 `2.5e-4` 更好，后续若投入
 正式 200 epoch 复核应优先它。结果文件和复现配置见 `results/lr_screen_50ep/`，大 checkpoint
 不进入普通 Git。
+
+## LR=2.5e-4 完整 200 epoch 复核
+
+从 50 epoch 粗筛的 LR `2.5e-4` checkpoint 继续到总计 200 epoch、`78,000` 步，正式评估
+固定为 train split 前 5,000 张真实图、5,000 张生成图、seed44 和裁剪预测 `x0`。
+
+| 权重 | FID |
+|---|---:|
+| EMA 0.9990 | 16.0761 |
+| EMA 0.9995 | 15.8897 |
+| EMA 0.9999 | **15.6761** |
+| raw | 16.8996 |
+
+最佳 EMA 0.9999 仍未达到 FID≤15，并比 R5 的 `15.4385` 高 `0.2376`。因此，50 epoch
+快速筛选中 LR `2.5e-4` 的优势没有在正式 200 epoch 结果中延续。详细结果、FID 文件、
+日志和最终样本网格见 `results/lr25_200ep/`，checkpoint 通过 GitHub Release 提供。

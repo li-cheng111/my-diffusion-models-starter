@@ -340,3 +340,20 @@ JSON、协议和复现命令见 [`results/fid15_stage1/real_subset/`](results/fi
 快速 FID 固定为 1,000 对 1,000、train split、seed 44、EMA 0.9999 和逐步裁剪 `x0`，
 不能与正式 5,000/5,000 FID 直接比较，也不能宣称 FID≤15。两组均正常完成；本轮快速
 筛选下 `2.5e-4` 优于 `3.0e-4`，如果继续正式复核，应优先选择 `2.5e-4`。
+
+## LR=2.5e-4 完整 200 epoch 复核
+
+已从 50 epoch 的 LR `2.5e-4` checkpoint 继续到总计 200 epoch、`78,000` 步。正式协议为
+5,000 张生成图、train split 前 5,000 张真实图、seed44、逐步裁剪 `x0`。
+
+| 权重 | FID |
+|---|---:|
+| EMA 0.9990 | 16.0761 |
+| EMA 0.9995 | 15.8897 |
+| EMA 0.9999 | **15.6761** |
+| raw | 16.8996 |
+
+最佳结果仍高于 15，且比此前 R5 的 `15.4385` 高 `0.2376`；因此在当前 200 epoch 预算下，
+提高到 `2.5e-4` 没有改善正式 FID。完整结果见
+[`results/lr25_200ep/`](results/lr25_200ep)，最终 checkpoint 位于
+[`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)。
