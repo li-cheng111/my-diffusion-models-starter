@@ -12,6 +12,7 @@ PID_FILE="$ROOT/launcher.pid"
 mkdir -p "$ROOT/ckpt" "$ROOT/samples" "$ROOT/eval"
 echo "$$" > "$PID_FILE"
 : > "$LOG"
+echo "===== START LR25_200EP =====" | tee -a "$LOG"
 
 if [ ! -f "$RESUME_CKPT" ]; then
   echo "resume checkpoint missing: $RESUME_CKPT" | tee -a "$LOG"
@@ -64,3 +65,4 @@ echo "[LR25_200EP] best EMA grid start" | tee -a "$LOG"
   2>&1 | tee "$ROOT/eval/sample_grid.log" | tee -a "$LOG"
 
 echo "[LR25_200EP] all training and evaluation finished" | tee -a "$LOG"
+echo "===== END LR25_200EP =====" | tee -a "$LOG"
