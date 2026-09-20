@@ -19,6 +19,9 @@
 
 配置和启动脚本分别见 [`configs/cifar10_lr25_200ep_resume.yaml`](../../configs/cifar10_lr25_200ep_resume.yaml) 和 [`run_lr25_200ep_resume.sh`](../../run_lr25_200ep_resume.sh)。
 
+本目录同时保存了实际运行配置 `config.yaml`、完整 loss 历史 `loss_history.csv`、loss 曲线
+`loss_curve.png` 和 EMA 0.9999 裁剪采样网格 `final_grid_ema9999_clipx0.png`。
+
 ## 正式 FID
 
 固定协议为 5,000 张生成图、CIFAR-10 train split 前 5,000 张真实图、seed `44`、batch size `64`、逐步裁剪 `x0`。
@@ -39,4 +42,9 @@
 - EMA 明显优于 raw，raw 与 EMA 0.9999 的差值为 `1.2235`，说明参数平均仍然有效，但不足以弥补学习率/训练轨迹差异。
 - 50 epoch 快速筛选中的优势没有延续到正式 200 epoch，因此早期 1,000 样本 FID 只能用于排除候选，不能代替完整训练判断。
 
-完整结果文件、日志、loss 曲线和最终样本网格位于本目录；大型 checkpoint 不进入普通 Git，通过 `challenge-v1 Release` 提供。
+完整结果文件、loss 历史、loss 曲线和最终样本网格位于本目录；大型 checkpoint 不进入普通 Git，
+通过 [`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)
+提供：[`lr25_200ep_final.pt`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/challenge-v1/lr25_200ep_final.pt)。
+
+Release checkpoint SHA-256：
+`5c854456880228d31975db4927e986768fbbc0acb7a92bddef9b5f1559ac8070`。
