@@ -421,3 +421,20 @@ clipping 和评估协议，主要变量是 prediction target。R7 的明显退�
 这说明粗筛适合淘汰明显过高的学习率，不足以预测最终 FID。EMA 0.9999 仍然有效，
 但不能弥补峰值学习率过低造成的有效拟合不足。完整日志和样本见
 `results/fid15_lr5e5_full/`，大型 checkpoint 通过 `challenge-v1 Release` 提供。
+
+## 50 epoch 学习率续训粗筛
+
+在 30 epoch 学习率粗筛之后，继续保留的 `2.5e-4` 与 `3.0e-4` 候选没有从头训练，而是
+分别从各自的 30 epoch checkpoint 继续到 50 epoch。每组从 `11,730` 步增加到 `19,550`
+步，新增 `7,820` 个有效更新。配置保持完整 U-Net、cosine beta、epsilon prediction、
+uniform loss、seed44、batch128、EMA bank 和逐步裁剪 `x0` 不变。
+
+| 学习率 | 30 epoch 快速 FID | 50 epoch 快速 FID |
+|---:|---:|---:|
+| `2.5e-4` | 330.7679 | **193.6462** |
+| `3.0e-4` | 323.4893 | 202.6441 |
+
+评估仍是 1,000 对 1,000、train split、seed44、EMA0.9999 的快速 FID，因此不能与正式
+5,000 样本结果直接比较。两组都正常完成；在本轮筛选中 `2.5e-4` 更好，后续若投入
+正式 200 epoch 复核应优先它。结果文件和复现配置见 `results/lr_screen_50ep/`，大 checkpoint
+不进入普通 Git。

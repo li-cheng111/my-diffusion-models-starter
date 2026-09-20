@@ -1,0 +1,86 @@
+/root/autodl-tmp/diffusion-models-starter-r4/projects/project1_ddpm/train.py:276: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = GradScaler(enabled=use_amp and amp_dtype == torch.float16)
+/root/autodl-tmp/diffusion-models-starter-r4/projects/project1_ddpm/train.py:344: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast(enabled=use_amp, dtype=amp_dtype):
+[epoch 030 step 011800] loss=0.03941 lr=3.000e-04
+[epoch 030 step 011900] loss=0.05628 lr=3.000e-04
+[epoch 030 step 012000] loss=0.04696 lr=3.000e-04
+[epoch 030 attempt 000351] optimizer step skipped; scaler=2097152.0
+[epoch 031 step 012100] loss=0.05056 lr=3.000e-04
+[epoch 031 step 012200] loss=0.06059 lr=3.000e-04
+[epoch 031 step 012300] loss=0.03993 lr=3.000e-04
+[epoch 031 step 012400] loss=0.05213 lr=3.000e-04
+[epoch 032 step 012500] loss=0.06838 lr=3.000e-04
+[epoch 032 step 012600] loss=0.06225 lr=3.000e-04
+[epoch 032 step 012700] loss=0.05897 lr=3.000e-04
+[epoch 032 step 012800] loss=0.05131 lr=3.000e-04
+[epoch 033 step 012900] loss=0.07329 lr=3.000e-04
+[epoch 033 step 013000] loss=0.07977 lr=3.000e-04
+[epoch 033 step 013100] loss=0.05539 lr=3.000e-04
+[epoch 033 step 013200] loss=0.05669 lr=3.000e-04
+[epoch 034 step 013300] loss=0.05374 lr=3.000e-04
+[epoch 034 step 013400] loss=0.04846 lr=3.000e-04
+[epoch 034 step 013500] loss=0.06934 lr=3.000e-04
+[epoch 034 step 013600] loss=0.06123 lr=3.000e-04
+[epoch 035 step 013700] loss=0.04934 lr=3.000e-04
+[epoch 035 step 013800] loss=0.05239 lr=3.000e-04
+[epoch 035 step 013900] loss=0.04348 lr=3.000e-04
+[epoch 035 step 014000] loss=0.05098 lr=3.000e-04
+[epoch 036 attempt 002390] optimizer step skipped; scaler=2097152.0
+[epoch 036 step 014100] loss=0.05952 lr=3.000e-04
+[epoch 036 step 014200] loss=0.06287 lr=3.000e-04
+[epoch 036 step 014300] loss=0.07084 lr=3.000e-04
+[epoch 036 step 014400] loss=0.05002 lr=3.000e-04
+[epoch 037 step 014500] loss=0.05035 lr=3.000e-04
+[epoch 037 step 014600] loss=0.05098 lr=3.000e-04
+[epoch 037 step 014700] loss=0.06322 lr=3.000e-04
+[epoch 037 step 014800] loss=0.05719 lr=3.000e-04
+[epoch 038 step 014900] loss=0.05302 lr=3.000e-04
+[epoch 038 step 015000] loss=0.06417 lr=3.000e-04
+[epoch 038 step 015100] loss=0.06738 lr=3.000e-04
+[epoch 038 step 015200] loss=0.05714 lr=3.000e-04
+[epoch 039 step 015300] loss=0.06840 lr=3.000e-04
+[epoch 039 step 015400] loss=0.05766 lr=3.000e-04
+[epoch 039 step 015500] loss=0.05622 lr=3.000e-04
+[epoch 040 step 015600] loss=0.06202 lr=3.000e-04
+[epoch 040 step 015700] loss=0.06385 lr=3.000e-04
+[epoch 040 step 015800] loss=0.05401 lr=3.000e-04
+[epoch 040 step 015900] loss=0.05556 lr=3.000e-04
+[epoch 041 step 016000] loss=0.05152 lr=3.000e-04
+[epoch 041 step 016100] loss=0.06145 lr=3.000e-04
+[epoch 041 attempt 004411] optimizer step skipped; scaler=2097152.0
+[epoch 041 step 016200] loss=0.06546 lr=3.000e-04
+[epoch 041 step 016300] loss=0.05306 lr=3.000e-04
+[epoch 042 step 016400] loss=0.06886 lr=3.000e-04
+[epoch 042 step 016500] loss=0.05541 lr=3.000e-04
+[epoch 042 step 016600] loss=0.04138 lr=3.000e-04
+[epoch 042 step 016700] loss=0.06268 lr=3.000e-04
+[epoch 043 step 016800] loss=0.05404 lr=3.000e-04
+[epoch 043 step 016900] loss=0.06172 lr=3.000e-04
+[epoch 043 step 017000] loss=0.04856 lr=3.000e-04
+[epoch 043 step 017100] loss=0.07663 lr=3.000e-04
+[epoch 044 step 017200] loss=0.05049 lr=3.000e-04
+[epoch 044 step 017300] loss=0.06552 lr=3.000e-04
+[epoch 044 step 017400] loss=0.05994 lr=3.000e-04
+[epoch 044 step 017500] loss=0.05292 lr=3.000e-04
+[epoch 045 step 017600] loss=0.06705 lr=3.000e-04
+[epoch 045 step 017700] loss=0.05547 lr=3.000e-04
+[epoch 045 step 017800] loss=0.06505 lr=3.000e-04
+[epoch 045 step 017900] loss=0.06119 lr=3.000e-04
+[epoch 046 step 018000] loss=0.04308 lr=3.000e-04
+[epoch 046 step 018100] loss=0.05090 lr=3.000e-04
+[epoch 046 attempt 006421] optimizer step skipped; scaler=2097152.0
+[epoch 046 step 018200] loss=0.05529 lr=3.000e-04
+[epoch 046 step 018300] loss=0.06856 lr=3.000e-04
+[epoch 047 step 018400] loss=0.04920 lr=3.000e-04
+[epoch 047 step 018500] loss=0.05528 lr=3.000e-04
+[epoch 047 step 018600] loss=0.04743 lr=3.000e-04
+[epoch 047 step 018700] loss=0.04768 lr=3.000e-04
+[epoch 048 step 018800] loss=0.04813 lr=3.000e-04
+[epoch 048 step 018900] loss=0.05436 lr=3.000e-04
+[epoch 048 step 019000] loss=0.04981 lr=3.000e-04
+[epoch 048 step 019100] loss=0.05358 lr=3.000e-04
+[epoch 049 step 019200] loss=0.06440 lr=3.000e-04
+[epoch 049 step 019300] loss=0.05360 lr=3.000e-04
+[epoch 049 step 019400] loss=0.04724 lr=3.000e-04
+Training complete in 16.1 minutes

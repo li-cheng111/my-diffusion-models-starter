@@ -196,3 +196,18 @@
   OOM、NaN 或 checkpoint 损坏。
 - 产物：轻量结果进入 `results/fid15_lr5e5_full/`，最终 checkpoint 进入
   `challenge-v1 Release`。
+
+## 条目 15——30→50 epoch 学习率续训粗筛
+
+- 状态：已完成，目标 FID≤15 尚未被正式协议验证。
+- 实施：从 30 epoch 的 LR `2.5e-4` 和 `3.0e-4` `final.pt` 继续到 50 epoch；每组从
+  `11,730` 步到 `19,550` 步，新增 `7,820` 个有效更新。
+- 固定设置：CIFAR-10 train split、完整 U-Net、cosine beta、epsilon prediction、
+  uniform loss、seed44、batch128、EMA bank、逐步裁剪 `x0`。
+- 快速评估：1,000 对 1,000、EMA0.9999、seed44；LR2.5e-4=`193.6462`，LR3.0e-4=
+  `202.6441`。对应 30 epoch 快速值分别为 `330.7679` 和 `323.4893`。
+- 训练：两组均正常结束；最后 loss 分别为 `0.04731/0.04724`，每组约 16.1 分钟；出现
+  少量 AMP optimizer step skip，但没有 OOM、NaN 或 checkpoint 损坏。
+- 结论：50 epoch 快速筛选中 LR2.5e-4 优于 LR3.0e-4，但快速 FID 不能替代正式
+  5,000/5,000 评估，也不能宣称达到 FID≤15。大型 checkpoint 不进入普通 Git，轻量结果
+  见 `results/lr_screen_50ep/`。

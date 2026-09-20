@@ -1,0 +1,51 @@
+# Continue the 30-epoch LR25/LR30 coarse-screen checkpoints to 50 epochs.
+# Candidate lr and output_dir are injected by run_lr_screen_resume_50ep.sh.
+output_dir: /root/lr_screen_50ep/runs/LR25
+seed: 44
+
+dataset:
+  name: cifar10
+  batch_size: 128
+  image_size: 32
+  num_workers: 8
+  root: ./data
+
+model:
+  in_channels: 3
+  out_channels: 3
+  base_channels: 128
+  channel_mult: [1, 2, 2, 2]
+  num_res_blocks: 2
+  attn_resolutions: [16]
+  dropout: 0.1
+  image_size: 32
+  skip_layout: full
+
+diffusion:
+  T: 1000
+  beta_schedule: cosine
+  beta_start: 0.0001
+  beta_end: 0.02
+  s: 0.008
+
+optimizer:
+  lr: 2.5e-4
+  weight_decay: 0.0
+  warmup_steps: 1000
+  lr_schedule: warmup_constant
+
+ema_decays: [0.999, 0.9995, 0.9999]
+mixed_precision: fp16
+
+training:
+  num_epochs: 50
+  max_steps: 19550
+  log_every: 100
+  sample_every: 5000
+  ckpt_every: 10000
+  grad_clip: 1.0
+  gradient_accumulation_steps: 1
+  loss_weighting: uniform
+
+wandb:
+  enabled: false
