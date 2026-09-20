@@ -1,0 +1,8 @@
+FID: 18.6642
+num_samples: 5000
+real_split: train
+weights: raw
+prediction_type: epsilon
+checkpoint: /root/fid15_lr5e5_full/ckpt/final.pt
+seed: 44
+clip_denoised: True

@@ -93,6 +93,15 @@ LR05 的 `238.0244`，其次为 LR08 的 `263.5649`；其余候选为 `284.0970�
 后续若继续训练，优先复核 LR05 与 LR08，并恢复正式 200 epoch 的后期学习率衰减和 5,000
 样本 FID 协议；本轮不能据此宣称 FID≤15。
 
+### LR=5e-5 完整复核结果
+
+LR=5e-5 已完成完整 200 epoch、78,000 steps 和正式 5,000 样本 FID 评估。EMA
+`0.999 / 0.9995 / 0.9999 / raw` 的 FID 分别为 `17.4472 / 17.3407 / 16.5231 / 18.6642`。
+最佳 EMA 0.9999 的 `16.5231` 比 R5 的 `15.4385` 高 `1.0846`，因此低学习率没有改善
+当前最佳结果。完整日志、loss 曲线、样本网格和 FID 对照见
+[`results/fid15_lr5e5_full`](results/fid15_lr5e5_full)，最终 checkpoint 已上传到
+[`challenge-v1 Release`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)。
+
 ### 挑战档实际结果
 
 | 调度策略 | EMA FID | Raw FID |

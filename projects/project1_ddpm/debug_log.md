@@ -182,3 +182,17 @@
   没有改善结果，后续应回到 R5 epsilon-prediction 基线进行单变量消融。
 - 产物：结果目录为 `results/fid15_r7_v_prediction/`；大型 checkpoint 不进入普通 Git，
   通过 GitHub Release 提供。
+
+## 条目 14——LR=5e-5 完整 200 epoch 复核
+
+- 状态：已完成，目标未达标。
+- 实施：完整 U-Net、cosine beta、uniform epsilon MSE、seed44、200 epoch、78,000 steps、
+  warmup 5,000，step 58,500 后进行 late cosine decay；峰值学习率 `5e-5`，最小学习率
+  `5e-6`，EMA bank 为 `0.999/0.9995/0.9999`。
+- 正式评估：5,000 张 train split 真实图、5,000 张生成图、seed44、逐步裁剪预测 x0。
+- 结果：EMA0.9990=`17.4472`，EMA0.9995=`17.3407`，EMA0.9999=`16.5231`，raw=`18.6642`。
+- 对比：R5 EMA0.9999=`15.4385`，因此 LR=5e-5 高 `1.0846`；低学习率没有改善 R5。
+- 异常记录：step 76,471 附近有一次 AMP optimizer step skip，训练随后正常完成；没有
+  OOM、NaN 或 checkpoint 损坏。
+- 产物：轻量结果进入 `results/fid15_lr5e5_full/`，最终 checkpoint 进入
+  `challenge-v1 Release`。
