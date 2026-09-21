@@ -125,16 +125,49 @@ def save_preview(images: torch.Tensor, output: Path) -> None:
 def plot_pareto(results: list[dict], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     fig, axis = plt.subplots(figsize=(7.5, 5.0))
-    for sampler_name in sorted({item["sampler"] for item in results}):
+    # DDIM (eta=0) and the starter Euler sampler can be numerically identical
+    # on this checkpoint.  Draw Euler first and DDIM last with a dashed line
+    # so the DDIM curve remains visible instead of being painted over.
+    plot_order = ("ddpm", "euler", "dpm-solver", "ddim")
+    styles = {
+        "ddpm": {"color": "#f58518", "linestyle": "-", "marker": "o", "zorder": 2},
+        "euler": {"color": "#d62728", "linestyle": "-", "marker": "o", "zorder": 3},
+        "dpm-solver": {
+            "color": "#2ca02c",
+            "linestyle": "-",
+            "marker": "o",
+            "zorder": 4,
+        },
+        "ddim": {
+            "color": "#1f77b4",
+            "linestyle": "--",
+            "marker": "s",
+            "zorder": 5,
+        },
+    }
+    labels = {
+        "ddpm": "DDPM",
+        "ddim": "DDIM (eta=0)",
+        "euler": "Euler",
+        "dpm-solver": "DPM-Solver-2",
+    }
+    names = [
+        name for name in plot_order if any(item["sampler"] == name for item in results)
+    ]
+    names.extend(
+        sorted({item["sampler"] for item in results}.difference(names))
+    )
+    for sampler_name in names:
         points = sorted(
             (item for item in results if item["sampler"] == sampler_name),
             key=lambda item: item["nfe"],
         )
+        style = styles.get(sampler_name, {})
         axis.plot(
             [item["nfe"] for item in points],
             [item["fid"] for item in points],
-            marker="o",
-            label=sampler_name,
+            label=labels.get(sampler_name, sampler_name),
+            **style,
         )
     axis.set_xscale("log")
     axis.set_xlabel("NFE (model forward evaluations, log scale)")

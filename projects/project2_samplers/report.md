@@ -72,6 +72,11 @@ $$
 
 ![FID 与 NFE 的 Pareto 图](runs/pareto_fid_nfe.png)
 
+图中 DDIM 使用蓝色虚线和方形标记，并在 Euler 曲线之后绘制。两者在本次
+`eta=0`、linear 时间步和同一 checkpoint 下数值重合，因此如果只使用相同的
+实线和圆点，后绘制的 Euler 会把 DDIM 完全覆盖；现在图例和曲线均能明确区分
+两种采样器。
+
 每个点都使用相同的训练网络、checkpoint、5,000 张真实图和随机种子，因此曲线
 变化反映的是离散化或求解器行为，而不是重新训练的影响。DDIM 随步数增加而
 稳定改善，FID 从 10 NFE 时的 34.555 降至 250 NFE 时的 21.241。课程 starter
@@ -84,11 +89,23 @@ $$
 
 ![共享初始噪声的采样轨迹对比](runs/trajectory_comparison.png)
 
-测量结果见 `runs/trajectory_comparison.json`。所有行都使用相同的初始噪声
-（`same_initial_noise=true`）和真实时间步标签。在 50 个外层步时，DDPM 使用
-1,000 NFE，平均单步 L2 为 5.255；DDIM/Euler 使用 50 NFE，平均单步 L2 为
-1.131；DPM-Solver-2 使用 99 NFE，平均单步 L2 为 1.123。DDPM 在初始化之后
-仍然是随机过程，而其他配置是确定性的。
+测量结果见 `runs/trajectory_comparison.json`。图中四行从上到下依次对应表中的
+DDPM、DDIM、Euler 和 DPM-Solver-2；每一行都使用同一个 Project 1
+epsilon-prediction U-Net（CIFAR-10、seed44、EMA 权重），变化项只有采样器、
+时间步策略和 NFE。所有行使用相同的初始噪声（`same_initial_noise=true`）和
+真实时间步标签。
+
+| 轨迹（图中行） | 采样器与更新方式 | 神经网络模型 | 时间步策略 / 外层步数 | 实际 NFE | 平均单步 L2 | 最大单步 L2 | 终点距初始噪声 L2 |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | DDPM ancestral | Project 1 CIFAR-10 epsilon U-Net（EMA，seed44） | linear / 1000 | 1000 | 5.2548 | 8.0443 | 67.5356 |
+| 2 | DDIM，`eta=0` | 同上 | linear / 50 | 50 | 1.1307 | 3.2183 | 53.7210 |
+| 3 | Euler probability-flow | 同上 | linear / 50 | 50 | 1.1307 | 3.2183 | 53.7210 |
+| 4 | DPM-Solver-2 指数中点 | 同上 | lambda / 50 | 99 | 1.1225 | 4.2199 | 53.0901 |
+
+在 50 个外层步时，DDPM 使用 1,000 NFE，平均单步 L2 最大；DDIM 和 Euler
+完全重合；DPM-Solver-2 以约两倍 NFE 换取略小的平均单步位移。DDPM 在初始化
+之后仍然是随机过程，而其他三种配置在 `eta=0` 或确定性 ODE 更新下不再注入
+新的随机噪声。
 
 ## 5. DPM-Solver-2
 
@@ -97,11 +114,24 @@ $$
 当运行 `S` 个外层步时，网络实际评估次数为 `2S-1`，因为最后的干净图像投影
 只需要一次评估。
 
-正式对比表明，二阶中点修正在低 NFE 区间最有用：DPM-Solver-2 的 FID 从 9 NFE
-时的 29.295 降至 19 NFE 时的 21.074，随后在 49–99 NFE 附近稳定在 21.2。
-25 步结果略差于 10 步（21.361 对 21.074），这是有限模型和离散时间网格造成的
-现象，并不意味着固定 seed 下增加评估次数必然改善 FID。真实模型调用次数
-`2S-1` 已同时记录在 benchmark JSON 和 sampler 自测中。
+正式对比表明，二阶中点修正在低 NFE 区间最有用。为避免只罗列 DPM-Solver-2
+自己的数值，下面同时列出 NFE 最接近的 DDIM 配置；$\Delta$FID 定义为
+`DPM-Solver-2 FID - 匹配 DDIM FID`，负值表示 DPM-Solver-2 更好。
+
+| DPM 外层步数 $S$ | DPM 实际 NFE $2S-1$ | DPM FID | 采样时间 | 匹配 DDIM NFE | 匹配 DDIM FID | $\Delta$FID（DPM - DDIM） |
+|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 9 | 29.295 | 9.3 s | 10 | 34.555 | -5.261 |
+| 10 | 19 | 21.074 | 19.3 s | 20 | 28.159 | -7.085 |
+| 25 | 49 | 21.361 | 49.4 s | 50 | 24.574 | -3.213 |
+| 50 | 99 | 21.192 | 100.5 s | 100 | 22.875 | -1.684 |
+
+这张表支持三个结论。第一，$S=10$、19 NFE 是本实验中最有效的工作点，FID
+比相近 NFE 的 DDIM 低 7.085。第二，增加外层步数并不保证 FID 单调下降：25
+步（49 NFE）的 21.361 反而略差于 10 步（19 NFE）的 21.074，说明有限容量
+模型的预测误差和 lambda 离散网格误差开始占主导。第三，99 NFE 时 DPM-Solver-2
+仍优于 100 NFE DDIM，但距离 DDPM 的 19.290 还有差距；因此它的优势是用较少
+模型调用达到接近高质量的结果，而不是在所有 NFE 下都超过完整 DDPM。真实模型
+调用次数 `2S-1` 已同时记录在 benchmark JSON 和 sampler 自测中。
 
 ## 6. DDIM 反演
 
@@ -157,7 +187,7 @@ $$
 $$
 
 将
-将 $\hat x_0=(x_t-\sqrt{1-\bar\alpha_t}\epsilon_\theta)/
+$\hat x_0=(x_t-\sqrt{1-\bar\alpha_t}\epsilon_\theta)/
 \sqrt{\bar\alpha_t}$ 代入 DDIM 均值，并收集 $x_t$ 与 $\epsilon_\theta$
 的系数，可得
 
