@@ -66,6 +66,7 @@ def main() -> int:
     all_trajectories: dict[str, list[torch.Tensor]] = {}
     all_timesteps: dict[str, list[int]] = {}
     metrics: list[dict] = []
+    model_label = "Project 1 CIFAR-10 epsilon-prediction U-Net"
     for sampler_name in args.samplers:
         strategy = "lambda" if sampler_name.replace("_", "-") == "dpm-solver" else "linear"
         sampler = get_sampler(
@@ -98,8 +99,13 @@ def main() -> int:
         metrics.append(
             {
                 "sampler": sampler_name,
+                "model": model_label,
+                "weights": weight_type,
                 "num_steps": num_steps,
                 "nfe": sampler.nfe_for_steps(num_steps),
+                "timestep_strategy": strategy,
+                "initial_noise_seed": args.seed,
+                "trajectory_points": len(trajectory),
                 "mean_step_l2": sum(displacements) / len(displacements),
                 "max_step_l2": max(displacements),
                 "final_l2_from_initial": float(
@@ -143,6 +149,7 @@ def main() -> int:
         "checkpoint": str(Path(args.ckpt).resolve()),
         "project1_path": str(project1),
         "git_commit": repository_commit(),
+        "model": model_label,
         "weights": weight_type,
         "seed": args.seed,
         "same_initial_noise": True,
