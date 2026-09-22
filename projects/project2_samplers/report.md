@@ -107,12 +107,120 @@ epsilon-prediction U-Net（CIFAR-10、seed44、EMA 权重），变化项只有�
 之后仍然是随机过程，而其他三种配置在 `eta=0` 或确定性 ODE 更新下不再注入
 新的随机噪声。
 
-## 5. DPM-Solver-2
+## 5. DPM-Solver-2：高阶 ODE 求解器
 
-令 $\lambda=\log(\alpha/\sigma)$，扩散 ODE 的线性部分可以解析积分。实现
-分别在源点和离散 lambda 中点的最近时间步评估网络，然后应用指数中点更新。
-当运行 `S` 个外层步时，网络实际评估次数为 `2S-1`，因为最后的干净图像投影
-只需要一次评估。
+### 5.1 关键思想：半解析积分
+
+扩散模型的 probability-flow ODE 可以抽象写成：
+
+$$
+\frac{dx}{dt}=a(t)x+b_\theta(x,t),
+$$
+
+其中 $a(t)x$ 是只与噪声调度有关的线性项，$b_\theta(x,t)$ 是包含模型预测
+$\epsilon_\theta(x,t)$ 的非线性项。对这样的半线性 ODE 使用积分因子，可以把
+解写成：
+
+$$
+x(s)=\exp\left(\int_t^s a(u)\,du\right)x(t)
++\int_t^s\exp\left(\int_\tau^s a(u)\,du\right)b_\theta(x(\tau),\tau)\,d\tau.
+$$
+
+DPM-Solver 不再像普通 Euler 一样把整个右端都近似为
+$f_\theta(x_t,t)\Delta t$，而是先解析计算线性项，只对包含神经网络的积分项
+做数值近似。这样可以在较大的时间区间上保留扩散调度的精确结构，显著降低
+离散化误差；但“更精确”依赖于模型预测足够平滑，并不是无条件精确。
+
+在 epsilon 预测参数化下，代码使用：
+
+$$
+\alpha_t=\sqrt{\bar\alpha_t},\qquad
+\sigma_t=\sqrt{1-\bar\alpha_t},\qquad
+\lambda_t=\log\frac{\alpha_t}{\sigma_t}
+$$
+
+作为噪声坐标。其中 $\lambda_t$ 是 log-SNR 的一半。采样从噪声端向数据端
+进行时，$\lambda$ 单调增加，因此比原始整数时间步更适合均匀分配求解区间。
+本实现先在 $\lambda$ 空间均匀取点，再映射到最近的离散训练时间步。
+
+若在一个区间内暂时把模型预测视为常数，记
+
+$$
+h=\lambda_s-\lambda_t>0,
+$$
+
+则半解析的一阶更新可以写为：
+
+$$
+x_s=\frac{\alpha_s}{\alpha_t}x_t
+-\sigma_s\left(e^h-1\right)\epsilon_\theta(x_t,t).
+$$
+
+第一项是线性扩散部分的解析传播，第二项是冻结模型预测后得到的积分结果。
+这说明 DPM-Solver 的效率来源不是减少模型计算本身，而是减少每次模型预测之间
+因大步长而产生的数值误差。
+
+### 5.2 DPM-Solver-2：指数中点法
+
+只在区间起点使用 $\epsilon_t$ 仍然是一阶近似。DPM-Solver-2 再增加一次
+中点模型评估，以估计模型预测在整个区间内的变化：
+
+$$
+\lambda_m=\frac{\lambda_t+\lambda_s}{2},\qquad
+h_m=\lambda_m-\lambda_t.
+$$
+
+首先用起点预测构造中点状态：
+
+$$
+x_m=\frac{\alpha_m}{\alpha_t}x_t
+-\sigma_m\left(e^{h_m}-1\right)\epsilon_t.
+$$
+
+然后在中点重新调用网络：
+
+$$
+\epsilon_m=\epsilon_\theta(x_m,t_m).
+$$
+
+最后使用中点预测完成整个区间：
+
+$$
+x_s=\frac{\alpha_s}{\alpha_t}x_t
+-\sigma_s\left(e^h-1\right)\epsilon_m.
+$$
+
+中点预测相当于对模型积分项使用指数加权的 midpoint quadrature。在模型预测
+随 $\lambda$ 平滑变化时，其局部误差为 $O(h^3)$，全局误差为 $O(h^2)$，因此
+称为二阶 DPM-Solver。这里的“二阶”数值积分阶数，不是每个采样步固定需要
+两次模型调用。
+
+当前实现对应 `DPMSolver2Sampler._dpm_solver_2_step`：先计算源点预测，再构造
+离散 lambda 中点并计算 `eps_mid`，最后使用指数中点更新。最后一步只需要用当前
+预测投影到干净图像，不再构造中点，因此运行 `S` 个外层步时：
+
+$$
+\mathrm{NFE}=2S-1.
+$$
+
+例如 10 个外层步实际是 19 NFE，而不是 10 或 20 NFE。
+
+### 5.3 “高阶”具体提高了什么
+
+从一阶到更高阶，本质上是对同一个模型积分项使用更高阶的近似：
+
+- 一阶 DPM-Solver 将区间内的 $\epsilon_\theta$ 视为常数，只使用一个时间点；
+- 二阶 DPM-Solver-2 使用中点预测，能够捕捉 $\epsilon_\theta$ 随 $\lambda$ 的
+  一阶变化；
+- 三阶及更高阶方法会使用更多中间点，或复用前几个区间的模型预测，拟合更高次
+  的时间变化。
+
+如果模型预测足够平滑，$p$ 阶方法的全局离散误差通常随步长按
+$O(h^p)$ 缩小。但阶数越高并不意味着 NFE 一定更低：单步高阶方法需要更多
+模型评估，多步方法则需要保存并复用历史预测。因此实际比较必须同时报告 NFE，
+不能只比较外层步数。当前实验中 DPM-Solver-2 的 `S=10` 实际是 19 NFE，
+而 DDIM 的 50 步是 50 NFE；“10 步 DPM 优于 50 步 DDIM”准确地说是较低模型
+调用预算下的比较，而不是同 NFE 的严格对照。
 
 正式对比表明，二阶中点修正在低 NFE 区间最有用。为避免只罗列 DPM-Solver-2
 自己的数值，下面同时列出 NFE 最接近的 DDIM 配置；$\Delta$FID 定义为
