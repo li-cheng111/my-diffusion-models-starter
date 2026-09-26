@@ -1,437 +1,355 @@
-# 项目 3：Stable Diffusion 完整解剖与微调
+# Project 3：Stable Diffusion 完整解剖、实验与微调
 
-> 本目录的实现与 AutoDL 实验产物位于 monorepo 分支
-> `codex/monorepo-organization`。基础模型固定为
-> `stable-diffusion-v1-5/stable-diffusion-v1-5` revision；权重、缓存和原始训练图像不提交。
+本 README 是 Project 3 的统一入口，合并了任务说明、实现方案、AutoDL 实测报告、阅读笔记、实验记录规范和验收清单。原始的 report.md、logs/ 与 reading_notes/ 仍保留，作为逐项证据和可复用模板；提交、复现实验和阅卷优先以本 README 的结论与产物路径为准。
 
-> **难度**：中-高
-> **预期完成时间**：1.5-2 周
-> **前置**：完成 L08-L09，已有 SD 概念基础。任务 A-C 学完 L09 即可动手；
-> **任务 D（LoRA）和 `04_controlnet_demo.ipynb` 依赖 L10**（W9，P2 阶段），
-> 按课程节奏它们会晚于任务 A-C 开放——先把 A-C 做完，等 L10 讲完再回来补 D。
+## 1. 项目摘要
 
-## 配套教材
+本项目不训练一个 Stable Diffusion 基础模型，而是拆解并复现 Stable Diffusion 1.5 的关键路径：
 
-讲义、公式推导、论文导读在教材库，开始前请确认已 clone：
+1. 手写 tokenizer、CLIP、latent 初始化、UNet、CFG、scheduler 和 VAE decode。
+2. 扫描 CFG、采样步数和 sampler，观察质量、结构和速度的变化。
+3. 解剖 VAE 的四个 latent channel，量化重构误差。
+4. 在冻结基础模型的前提下，用 LoRA 学习梵高风格偏移，并从全新 pipeline 重载验证。
+5. 运行 Canny ControlNet，并提取 cross-attention token 热力图。
 
-```bash
-git clone https://github.com/Qi-StarterTrain/diffusion-models-starter-materials.git
-```
+实现分支为 codex/monorepo-organization，完整代码和 AutoDL 产物已推送到：
 
-本项目用到：
+<https://github.com/li-cheng111/diffusion-models-starter/tree/codex/monorepo-organization>
 
-| 教材库文件 | 用途 |
-|-----------|------|
-| `slides/L09_latent_diffusion.md` | 主线讲义。§4 SD 架构、**§5 推理流程代码级解剖（任务 A 的蓝本）**、§6 显存优化、§8 LDM 的限制（任务 C 的分析角度） |
-| `slides/L08_cfg_conditional.md` | §4-§6 CFG 与 guidance scale（任务 B 的理论依据）、§8 negative prompt 的本质 |
-| `slides/L10_controlnet_lora.md` | §2 ControlNet、**§3 LoRA（任务 D）**，§3.5 给出了该改哪些 `target_modules` |
-| `derivations/derive_06_cfg.md` | CFG 与 classifier guidance 的等价性证明 |
-| `notebooks/nb07_sd_pipeline_anatomy.ipynb` | SD 单步内部解剖——任务 A 卡住时先看它 |
-| `notebooks/nb06_cfg_scale_sweep.ipynb` | CFG scale 实验的小规模版本，任务 B 的预演 |
-| `paper_notes/07_LDM_Rombach2022.md` | LDM/SD 论文导读（任务 A 的 reading note 要读 §3-§4） |
-| `paper_notes/06_CFG_HoSalimans2021.md` | CFG 论文导读 |
-| `paper_notes/10_ControlNet_Zhang2023.md`<br>`paper_notes/11_LoRA_Hu2021.md` | 任务 D 与 ControlNet demo |
+## 2. 实测结果总览
 
-> L09 §10 的课后任务把参数扫描写成 `02_parameter_sweep.ipynb`，本仓库提供的是
-> 命令行脚本 `02_parameter_sweep.py`——跑脚本即可，不必再改写成 notebook。
+| 模块 | AutoDL 配置与结果 | 主要产物 |
+|---|---|---|
+| A 手写推理 | RTX 4090，seed=42，50 DDIM steps；记录 step 0/9/24/49 latent 统计 | outputs/manual/、执行后的 01_inference_walkthrough.ipynb |
+| B 参数扫描 | CFG [1, 3, 7.5, 15, 25]，steps [10, 20, 50, 100]，DDIM/Euler-A/DPM++ 2M；full sweep 36.642 s | outputs/sweep/、outputs/sweep/metadata.json |
+| C VAE | 输入/重构 (1,3,512,512)，latent (1,4,64,64)；MSE 0.0019791808，PSNR 27.0351 dB | outputs/vae_*.png、outputs/vae_metrics.json |
+| D LoRA | 20 张图，rank=8、alpha=8、800 steps；209.47 s；loss 0.2810367 → 0.1527308；adapter 6.4 MB | outputs/lora/full/、outputs/lora/full_eval/ |
+| E ControlNet | Canny 四风格 prompt 加一组结构/prompt 冲突实验 | outputs/controlnet/ |
+| E Attention | 30 steps，捕获 cat/wizard/hat/forest，32 层、16×16/32×32 聚合 | outputs/attention/full/ |
 
----
+验收状态：AutoDL Project 3 tests 5 passed；无 NaN/Inf；LoRA adapter 小于 25 MB；scripts/check_repo.py 通过；基础模型、HF cache、训练原图和临时 checkpoint 均未提交。
 
-## 任务概述
+## 3. 环境、模型与数据来源
 
-不是"训练一个 Stable Diffusion"——那需要数百 GPU-days。
-而是**深入剖析**预训练 SD 模型的工作机制，并做轻量微调实验。
+### 3.1 经过验证的环境
 
-学习目标：
-1. 理解 SD 推理流水线每一步（不当黑盒用户）
-2. 掌握 VAE、UNet、CLIP text encoder 各自的作用
-3. 学会调试 SD 推理出现的问题
-4. 上手 LoRA 微调
-5. 了解 ControlNet 等条件控制方法
+AutoDL 实例：NVIDIA RTX 4090 24 GB，Python 3.12.3，CUDA 12.8。
 
----
+| 依赖 | 版本 |
+|---|---|
+| PyTorch / torchvision | 2.8.0+cu128 / 0.23.0 |
+| diffusers | 0.40.0 |
+| transformers | 5.15.1 |
+| peft | 0.20.0 |
+| accelerate | 1.14.0 |
+| huggingface_hub | 1.31.0 |
 
-## 目录结构
+依赖锁定记录见仓库根目录的 requirements/project3.txt；开始前可运行：
 
-```
-（仓库根目录）
-├── README.md                       ← 本文件
-├── check_env.py                    ← 环境自检（动手前先跑）
-├── 01_inference_walkthrough.ipynb  ← 手写 SD 推理（核心，任务 A）
-├── 02_parameter_sweep.py           ← CFG/steps/sampler 扫描（任务 B）
-├── 03_lora_finetune.py             ← LoRA 微调脚手架 ← TODO 13-15（任务 D）
-├── 04_controlnet_demo.ipynb        ← ControlNet demo（依赖 L10）
-├── experiment_log_template.md      ← 实验日志模板
-├── reading_note_template.md        ← 论文笔记模板（任务 A 的 reading note 用）
-├── 05_vae_anatomy.ipynb            ← 任务 C：VAE 四通道与重构
-├── 06_cross_attention_visualization.py ← 任务 E：token 热力图
-├── evaluate_lora.py                ← LoRA checkpoint 重载与前后对比
-├── prepare_vangogh_dataset.py      ← 公共领域数据下载与 SHA256 manifest
-├── report.md                        ← 中文总报告、流程图、自查题与验收说明
-├── reading_notes/                   ← LDM §3–4 与 SDXL 前半部分阅读笔记
-├── logs/                            ← 真实 smoke/AutoDL 实验日志（不写虚构结果）
-├── tests/                          ← CPU 合约测试与训练步测试
-└── outputs/                        ← 生成结果保存（自己建）
-```
-
-**动手之前先跑环境自检**——SD 权重 7 GB，跑到一半才发现依赖缺失很浪费时间：
-
-```bash
+~~~bash
 python check_env.py
-```
-
-从 monorepo 根目录运行 Project 3 的静态与训练步测试：
-
-```bash
 python -m pytest projects/project3_stable_diffusion/tests -q
-```
+~~~
 
-它会检查依赖包、显存、以及 HuggingFace 是否连得上（只发 HEAD 请求，不下载权重）。
+### 3.2 基础模型
 
----
+代码默认使用：
 
-## 任务清单
+~~~text
+stable-diffusion-v1-5/stable-diffusion-v1-5
+revision=451f4fe16113bff5a5d2269ed5ad43b0592e9a14
+~~~
 
-### 任务 A（必做）：手写 SD 推理流水线
+AutoDL 运行时 Hugging Face endpoint 不可达，因此实际使用了内容等价的 ModelScope Diffusers 镜像：
 
-完成 `01_inference_walkthrough.ipynb`。
+~~~text
+AI-ModelScope/stable-diffusion-v1-5@master
+~~~
 
-**禁止使用 `pipe(prompt)`**！必须分阶段手写：
-1. Tokenize：text → token ids
-2. Text encode：token ids → text embeddings (77, 768)
-3. Init noise：sample (4, 64, 64)
-4. Loop：for 50 DDIM steps
-   - Batch concat (cond + uncond)
-   - UNet forward
-   - CFG combination
-   - DDIM step
-5. VAE decode：(4, 64, 64) → (3, 512, 512)
+ControlNet 使用：
 
-每一步要打印 tensor shape 和统计量，确认你理解了。
+~~~text
+lllyasviel/sd-controlnet-canny
+~~~
 
-对照 L09 §5 的代码级解剖来写——那里给的是同一套流程的精简版，
-notebook 里多出来的 `scale_model_input` / `init_noise_sigma` 是为了兼容非 DDIM sampler。
+实际来源、文件 SHA256、GPU、依赖版本和运行参数见 outputs/autodl_environment.json。模型权重不进入 Git；脚本也支持把 --model_id 指向 AutoDL 持久盘中的本地模型目录。
 
-**同时提交一份 reading note**（L09 §10 必做第 3 项）：LDM 论文 §3-§4 + SDXL
-technical report 第一部分，按 `reading_note_template.md` 写，放到 `notes/`。
+### 3.3 LoRA 数据
 
----
+原计划使用 Wikimedia Commons 梵高公共领域作品。AutoDL 访问 Commons API 时出现 OSError: [Errno 99] Cannot assign requested address，因此实际实验使用公开的 ModelScope huggan/vangogh2photo 镜像，抽取 20 张 imageA 图像。训练原图只保留在被忽略的 .local/datasets/project3_vangogh，来源、许可说明和 SHA256 清单见 outputs/lora/vangogh_manifest.json。源码中的 Commons downloader 仍保留，未把镜像冒充为 Commons 原图。
 
-### 任务 B（必做）：参数扫描实验
+## 4. 端到端流程与 tensor shape
 
-运行 `02_parameter_sweep.py`，固定 prompt 和 seed，扫描：
+~~~text
+prompt
+  │
+  ├─ tokenizer → token ids                         (1, 77)
+  └─ CLIP text encoder → text embeddings           (1, 77, 768)
+                               │
+Gaussian noise                  │
+(1, 4, 64, 64) ── scheduler + UNet + CFG ──────────┘
+                               │
+denoised latent                                      (1, 4, 64, 64)
+                               │ divide by 0.18215
+VAE decoder ────────────────────────────────────────┘
+                               │
+RGB image                                             (1, 3, 512, 512)
+~~~
 
-| 参数 | 取值 |
-|------|------|
+SD 1.5 的 VAE 把 512×512 图像下采样 8 倍，所以 latent 空间是 (batch, 4, 64, 64)；4 是 latent channel 数。CLIP tokenizer 固定 padding/truncation 到 77，text encoder hidden size 为 768。CFG 将 unconditional 和 conditional embedding 拼成 (2,77,768)，UNet 一次前向后拆分：
+
+~~~text
+eps = eps_uncond + guidance_scale * (eps_cond - eps_uncond)
+~~~
+
+0.18215 是 SD 1.5 VAE 的 scaling factor，只在 latent 和 decoder 之间变换，不能省略。
+
+## 5. 任务 A：手写 Stable Diffusion 推理
+
+文件：01_inference_walkthrough.ipynb
+
+### 实现要求
+
+整个 notebook 禁止调用 pipe(prompt)，必须显式完成：
+
+1. tokenizer：prompt → token ids；
+2. CLIP text encoder：token ids → (1,77,768)；
+3. 初始化 (1,4,64,64) Gaussian noise；
+4. 50 个 DDIM steps：batch concat、UNet、CFG、scheduler step；
+5. VAE decode：latent → (1,3,512,512)。
+
+固定配置为 seed=42、CFG=7.5，negative prompt 为 low quality, blurry, distorted；运行中保存 step 0、9、24、49 的 latent 统计。notebook 已用 nbconvert --execute --inplace 执行并保留 execution count、文本和图片输出。
+
+### 产物
+
+- outputs/manual/manual_sd_seed42.png
+- outputs/manual/manual_sd_stats.json
+- 01_inference_walkthrough.ipynb
+
+## 6. 任务 B：CFG、steps 与 sampler 扫描
+
+文件：02_parameter_sweep.py
+
+### 配置
+
+| 参数 | full 取值 |
+|---|---|
 | CFG scale | [1, 3, 7.5, 15, 25] |
-| Inference steps | [10, 20, 50, 100] |
-| Sampler | DDIM, Euler-A, DPM++ 2M |
+| inference steps | [10, 20, 50, 100] |
+| sampler | DDIM、Euler-A、DPM++ 2M |
+| seed | 42 |
 
-```bash
+脚本支持 --preset smoke|full、--model_revision 和 --metadata_output。smoke 用于快速验证依赖和显存，full 才是交付矩阵：
+
+~~~bash
 python 02_parameter_sweep.py \
-    --prompt "a photograph of a cat wearing a wizard hat, fantasy art" \
-    --seed 42 --output_dir ./outputs/sweep
-```
+  --preset full \
+  --model_id /path/to/sd15-clean \
+  --model_revision "" \
+  --output_dir outputs/sweep \
+  --metadata_output outputs/sweep/metadata.json \
+  --seed 42
+~~~
 
-AutoDL 上首次验证环境时使用缩小矩阵：
+### 结果与解释
 
-```bash
-python 02_parameter_sweep.py --preset smoke --output_dir ./outputs/sweep_smoke
-```
+full 运行生成 16 张单图、CFG/steps/sampler 三张总图和一个二维网格，512×512，耗时 36.642 秒。CFG 从 1 增大到中等值时 prompt adherence 增强；过大时出现过饱和、边缘发硬和结构伪影。增加 steps 通常改善早期结构和局部细节，但收益递减；sampler 的离散化方式会同时改变风格和稳定性，不能把 steps 的影响单独归因于 sampler。
 
-脚本会跑 4 组实验，输出 `sweep_cfg.png`、`sweep_steps.png`、`sweep_sampler.png`、
-`grid_2d.png`（CFG × steps 二维网格）到 `--output_dir`，同时单独存每张图。
+产物：outputs/sweep/sweep_cfg.png、sweep_steps.png、sweep_sampler.png、grid_2d.png、全部单图和 metadata.json。
 
-观察：
-- 大 CFG 的伪影特征（过饱和、结构崩坏从哪个 scale 开始出现）
-- 少步采样的失败模式
-- 不同 sampler 的"风格差异"——同 seed 同 prompt 下差多少
+## 7. 任务 C：VAE anatomy
 
-提交这 4 张图 + 2 页观察分析。做过 Project 2 的话，
-可以顺带对比一下：SD 上的 sampler 差异和你在 CIFAR-10 上量到的 FID-NFE 趋势一致吗？
+文件：05_vae_anatomy.ipynb
 
----
+使用 posterior mode 而不是随机采样，保存四个 latent channel、原图/重构图、局部 crop 和 metrics JSON。AutoDL 实测：
 
-### 任务 C（必做）：VAE 解剖
+| 张量 | shape |
+|---|---|
+| 输入 RGB | (1,3,512,512) |
+| VAE latent | (1,4,64,64) |
+| 重构 RGB | (1,3,512,512) |
 
-本任务没有单独的脚手架——**在 `01_inference_walkthrough.ipynb` 末尾自己加 cell**
-（VAE 已经在那里加载好了），或者新建 `05_vae_anatomy.ipynb`：
+输入为 full sweep 的 grid_2d.png，MSE=0.0019791808，PSNR=27.0351 dB。四个 channel 的 mean/std 写入 outputs/vae_metrics.json。结果表明 VAE 对低频颜色和大形状保持较好，但细小文字、尖锐边缘和高频纹理会被平滑；这也是 latent diffusion 降低计算量时的主要信息瓶颈。
 
-1. 加载真实图像，用 SD 的 VAE encoder → 得到 latent
-2. 可视化 latent 的 4 个 channels（每个独立看）
-3. 注意 channel 之间的差异（有的偏向亮度，有的偏向色彩）
-4. 用 VAE decoder 还原，与原图对比
+产物：outputs/vae_channels.png、outputs/vae_reconstruction.png、outputs/vae_detail_crop.png、outputs/vae_metrics.json。
 
-观察问题：
-- VAE 重构在哪些细节上失真？
-- 不同 channel 编码了什么信息？
-- 文字、小目标是否丢失？
+## 8. 任务 D：LoRA 微调与独立重载
 
----
+文件：03_lora_finetune.py、evaluate_lora.py
 
-### 任务 D（进阶）：LoRA 微调
+### 实现约束
 
-完成 `03_lora_finetune.py` 中的 **TODO 13-15**。
+- 冻结 VAE、text encoder 和基础 UNet；
+- 只向 attention 的 to_q/to_k/to_v/to_out.0 注入 LoRA；
+- rank=8、alpha=8；
+- LoRA master 参数保留 FP32，前向使用 FP16 autocast/GradScaler；
+- 512×512、batch=1、AdamW、lr=1e-4、800 optimizer steps、seed=42；
+- 支持 gradient checkpointing、max-grad-norm=1、JSONL 日志和每 200 步 checkpoint。
 
-任务：用 10-30 张特定风格的图像（如某画风、某 object），LoRA 微调 SD。
+### 训练与评估
 
-```bash
+~~~bash
 python 03_lora_finetune.py \
-    --train_data_dir ./my_dataset \
-    --instance_prompt "a photo of sks dog" \
-    --output_dir ./outputs/lora \
-    --rank 8 --num_train_steps 800
-```
-
-完整实验显式固定 seed、revision，并在 200 步间隔保存 adapter：
-
-```bash
-python 03_lora_finetune.py \
-    --train_data_dir .local/datasets/project3_vangogh \
-    --instance_prompt "a painting in sks style" \
-    --output_dir outputs/lora --seed 42 --rank 8 \
-    --num_train_steps 800 --checkpointing_steps 200 \
-    --gradient_checkpointing --mixed_precision fp16 \
-    --validation_prompts "a landscape in the style of van gogh" \
+  --train_data_dir .local/datasets/project3_vangogh \
+  --instance_prompt "a painting in the style of van gogh" \
+  --output_dir outputs/lora/full \
+  --model_id /path/to/sd15-clean \
+  --model_revision "" \
+  --seed 42 --rank 8 --num_train_steps 800 \
+  --checkpointing_steps 200 --gradient_checkpointing \
+  --mixed_precision fp16 --max_grad_norm 1.0 --num_workers 2 \
+  --validation_prompts "a landscape in the style of van gogh" \
                        "a vase of sunflowers in the style of van gogh"
 
-python evaluate_lora.py --lora_dir outputs/lora \
-    --output_dir outputs/lora/evaluation --seed 42
-```
+python evaluate_lora.py \
+  --lora_dir outputs/lora/full \
+  --output_dir outputs/lora/full_eval \
+  --model_id /path/to/sd15-clean \
+  --model_revision "" --seed 42 --steps 20
+~~~
 
-下载公共领域训练图并生成来源/许可/SHA256 清单：
+AutoDL 训练 20 张图耗时 209.47 秒，初始 loss=0.2810367，最终 loss=0.1527308，last-50 mean=0.2282097，无 NaN/Inf；最终 pytorch_lora_weights.safetensors 为 6,414,448 bytes。评估从全新 pipeline 依次加载 base、200/400/600/800-step adapter，结果在 outputs/lora/full_eval/。
 
-```bash
-python prepare_vangogh_dataset.py \
-    --output_dir .local/datasets/project3_vangogh \
-    --manifest_output outputs/lora/vangogh_manifest.json
-```
+一个关键兼容性问题是：本实验的 adapter 是 UNet-only safetensors，必须使用 unet.load_lora_adapter(..., prefix=None, weight_name=...) 重载；若直接调用 pipeline loader，缺少 unet. 前缀的 keys 可能被静默忽略。该问题已由 2-step smoke 复现、修复并写入 debug log。
 
-参考：
-- **L10 §3**（LoRA）——§3.5 直接给出了 SD 该改哪些 `target_modules`，§3.6 给了数据量/步数的量级
-- `paper_notes/11_LoRA_Hu2021.md`
-- diffusers 的 LoRA 教程
+可视化结果：outputs/lora/full_eval/lora_before_after.png。
 
-超参起点（照 L10 §3.6）：单 object 用 5-30 张图训 500-2000 步，rank 8-32，lr 1e-4。
+## 9. 任务 E：ControlNet 与 cross-attention
 
-> ⚠️ 脚手架里 vae / text_encoder 用 fp16 冻结，**UNet 与 LoRA 参数保持 fp32**，
-> 混合精度靠 `autocast` + `GradScaler`。TODO 14 的提示里写了正确写法——
-> 直接把 LoRA 参数放进 fp16 再喂给 AdamW，loss 会一路 NaN，这是最常见的翻车点。
+### 9.1 Canny ControlNet
 
-提交：
-- LoRA 权重文件（几 MB，可以直接提交）
-- 微调前后对同一 prompt + 同一 seed 的对比图
-- 训练日志（按 `experiment_log_template.md`）
+文件：04_controlnet_demo.ipynb
 
----
+notebook 先计算 Canny，再用同一结构运行四个风格 prompt，额外执行“边缘图是猫、prompt 要求 golden retriever dog”的冲突实验。ControlNet 通过 zero-convolution 将条件分支的 residual 注入冻结的 SD UNet：zero 初始化让训练初期近似原模型，训练后才逐渐加入结构控制。
 
-### 任务 E（挑战）：Cross-Attention 可视化
+产物：outputs/controlnet/control_input_and_canny.png、controlnet_grid.png、四个 prompt 结果、controlnet_conflict_dog_on_same_edges.png 和 metadata.json。
 
-在采样过程中提取 cross-attention map，可视化每个 token 对应的图像区域。
+### 9.2 Cross-attention challenge
 
-参考：
-- Hertz et al., *Prompt-to-Prompt Image Editing* (ICLR 2023)
-- `diffusers` 的 attention processor 接口
+文件：06_cross_attention_visualization.py
 
-需要 hook 进 UNet 的内部模块，提取 attention 矩阵。
+自定义 attention processor 只收集 CFG conditional 分支，在中后期 timestep 聚合 16×16/32×32 query map，排除 BOS/EOS/padding，再插值叠加到生成图。AutoDL 30-step 实测捕获 cat/wizard/hat/forest 四个有效 token，聚合 32 个 attention layers，数值有限且 metadata 包含 token id、层数、空间分辨率和 seed。
 
-命令行挑战实现：
+产物：outputs/attention/full/generated.png、四张 token heatmap overlay 和 metadata.json；outputs/attention/smoke/ 提供快速回归样例。
 
-```bash
-python 06_cross_attention_visualization.py \
-    --output_dir outputs/attention --seed 42
-```
+## 10. LDM 与 SDXL 阅读笔记
 
-**或者**做 L09 §10 挑战档那道：自己组装 **SDXL 双模型（base + refiner）推理流水线**。
-两道二选一即可，计同样的 bonus 分。
+### LDM §3–4
 
----
+LDM 先训练感知压缩 autoencoder：encoder E 将图像 x 映射到 latent z=E(x)，decoder D 重构 x≈D(z)，扩散只在低维 latent 上运行。前向过程可写为：
 
-## 自查问题（在报告中回答）
+~~~text
+z_t = sqrt(alpha_bar_t) * z_0 + sqrt(1 - alpha_bar_t) * epsilon
+L_simple = E[ || epsilon - epsilon_theta(z_t, t, c) ||^2 ]
+~~~
 
-实现状态：A–E 的代码路径、测试、AutoDL 命令和交付物目录均已准备；A/C notebook
-已在本机成功执行并保留输出，模型权重、缓存和训练原图继续保持被忽略。AutoDL
-full 产物应按 `report.md` 与 `logs/` 的 runbook 回填，不能用本机 smoke 数字冒充。
+文本条件通过 cross-attention 注入：Q 来自当前 latent feature，K/V 来自文本 token embedding，softmax(QK^T/sqrt(d))V 将 token 语义写回空间位置；CFG 用 unconditional 与 conditional 预测的线性外推提高 prompt adherence。
 
-前 5 道来自 `01_inference_walkthrough.ipynb` 末尾的思考题，
-第 6-9 道来自 `04_controlnet_demo.ipynb`（做了 ControlNet 再答）：
+LDM 的优势是降低 UNet 的空间计算和显存，限制是 VAE 压缩误差、latent scaling、VAE 解码质量和 tokenizer 都会影响最终细节。Project 3 的 A/C 直接验证了 (1,4,64,64) latent 和 0.18215 scaling factor 的作用。
 
-1. 把 `cfg=0`（无 guidance）会生成什么？为什么？
-2. 只用 `cond_emb`、不做 batch concat，结果会怎样？
-3. 把 `init_noise_sigma` 改成 `0.5` 会怎样？
-4. 在采样循环里打印 `z` 的统计量——它的演化和 DDPM 训练时的 forward process 反过来是否一致？
-5. 把 `num_steps` 改成 5，结合 L07 解释为什么质量这么差。
-6. ControlNet 为什么不直接改 SD UNet，而要复制一份再加？
-7. Zero convolution 初始化为 0 有什么意义？训练后还是 0 吗？
-8. ControlNet 条件与 prompt 冲突时（canny 是猫、prompt 说狗），SD 怎么处理？
-9. ControlNet 推理比纯 SD 多多少计算？
+### SDXL 前半部分
 
-另外，下面这三个问题请务必能答上来——它们是本 Project 真正的验收标准
-（第二个在 L09 §12 FAQ 里有答案，另外两个要靠你做完任务 B、C 的观察）：
-**为什么 CFG 默认 7.5？为什么 SD 出 512×512 而不是 1024×1024？为什么 SD 画不好文字？**
+SDXL 不只是放大 SD 1.5 的 UNet，还使用两个 CLIP text encoder、拼接不同 embedding 空间、pooled text embedding 以及原图尺寸/裁剪坐标/目标尺寸等 added conditioning。base model 负责构图，refiner 在低噪声阶段恢复高频纹理。代价是更多显存、两个模型和更严格的尺寸 metadata。
 
----
+与本项目的连接：
 
-## 评分细则
+1. A 的 latent diffusion 正是 LDM 的压缩空间；
+2. D 的 LoRA 在固定 VAE/text interface 上学习 UNet attention 的低秩偏移；
+3. E 的 attention map 直接观察 QK^T 的 token 空间响应；
+4. 若迁移到 SDXL，不能只替换 UNet，必须同步处理两个 text encoder 和 added conditioning。
 
-| 项 | 权重 | 评分要点 |
-|----|------|---------|
-| 任务 A（手写推理） | 30% | 不可调高层 API；每步注释清晰 |
-| 任务 B（参数扫描） | 25% | 实验严谨，观察有 insight |
-| 任务 C（VAE 解剖） | 20% | 可视化清晰，分析合理 |
-| 任务 D（LoRA） | 20% | 进阶 |
-| 任务 E（attention） | 5% | 挑战（bonus） |
+论文指标依赖大规模数据和特定采样器；本项目的单 prompt 图片不能等价为 FID 结论。因此每次运行都记录 model revision、seed、scheduler、prompt、环境和产物 SHA256，并区分本机 smoke 与 AutoDL full run。
 
----
+## 11. 自查问题与结论
 
-## 环境要求
+1. **CFG=0 会怎样？** 只使用 unconditional 预测，prompt 的条件方向不参与外推。
+2. **只用 conditional embedding 会怎样？** 仍可条件采样，但不再有 CFG 的 unconditional-to-conditional 外推，prompt 约束通常变弱。
+3. **init_noise_sigma=0.5 会怎样？** 初始 latent 与 scheduler 预期尺度不匹配，可能造成亮度、对比度和细节异常，应使用 scheduler 提供的值。
+4. **反向 latent 演化是否是 forward process 的简单逆过程？** 噪声尺度总体下降，但每一步还受 UNet 预测、scheduler 参数化和 CFG 影响，并非逐项取逆。
+5. **steps=5 为什么质量差？** scheduler 校正机会太少，离散化误差来不及消除，结构和纹理都会变差。
+6. **ControlNet 为什么复制一份 UNet？** 保留冻结的 base 分支，条件分支只学习 residual，避免训练初期破坏原有生成能力。
+7. **zero convolution 的意义？** 初始 residual 为零，ControlNet 初期近似 identity；训练后卷积权重不再保持零，会逐步学会结构控制。
+8. **结构与 prompt 冲突时怎么办？** ControlNet 提供空间结构，prompt 提供语义和风格，模型会在条件强度、CFG 和 denoising 过程中折中；冲突图用于观察这一点。
+9. **ControlNet 多多少计算？** 至少增加一个条件分支的特征提取和 residual 计算，显存与时间高于纯 SD，但基础 UNet 可冻结复用。
+10. **为什么 CFG 常用 7.5？** 它是 prompt adherence 与自然度/伪影之间的经验折中，不是理论常数；B 的扫描用于验证本 prompt 下的最佳区间。
+11. **为什么 SD 1.5 常见 512×512？** VAE 将它压到 64×64 latent，训练和推理成本可控；1024×1024 会使 latent 空间边长翻倍、位置数量约增四倍。
+12. **为什么 SD 画不好文字？** tokenizer/CLIP 更擅长词级语义，训练目标不是逐字符排版；latent/VAE 还会平滑细笔画，数据中的文字也缺少稳定的字符级对齐。
 
-```bash
-pip install torch torchvision
-pip install diffusers transformers accelerate
-pip install matplotlib     # 任务 B 画网格图
-pip install peft           # 任务 D：LoRA
-pip install opencv-python  # ControlNet 的 canny 预处理
-```
+## 12. 真实 debug 记录
 
-装完跑 `python check_env.py` 确认——它会逐项列出缺哪个包、显存够不够、模型连不连得上。
+1. 旧 huggingface_hub 与 diffusers 0.40 的 cached_download 不兼容；升级到 1.31.0 后恢复。
+2. Windows 工作站的输出目录 ACL 对普通 Python 进程只读；运行产物改放到仓库外持久盘，AutoDL 使用 .local/ 和仓库 outputs/。
+3. LoRA 初版评估图与 base SHA256 相同；检查 state dict 后发现 loader 因缺少 unet. 前缀忽略 adapter，改用 UNet loader 并传 prefix=None 后恢复。
+4. cross-attention 初版在 norm_cross=None 的模块调用 normalization，触发 assertion；现在只在 norm_cross 为真时归一化。
+5. tokenizer token 含 <、>，Windows 文件名保存失败；输出 label 现在过滤为安全字符并保留 token index。
+6. AutoDL Commons API 返回 OSError: [Errno 99]；改用 ModelScope 公共镜像，并在 manifest 中明确记录来源、许可证和 SHA256。
 
-**显存要求**：
-- 推理：8 GB 起步（fp16 6 GB）
-- LoRA 微调：12 GB 起步（fp16 + gradient checkpointing 8 GB）
+## 13. 目录与产物索引
 
-如显存不够，建议租 Colab Pro 或类似服务。
-
----
-
-## 模型下载
-
-```python
-from diffusers import StableDiffusionPipeline
-pipe = StableDiffusionPipeline.from_pretrained(
-    "runwayml/stable-diffusion-v1-5",
-    torch_dtype=torch.float16,
-).to("cuda")
-```
-
-第一次会下载 ~7GB 权重。
-
-**关于 model id**：`runwayml/stable-diffusion-v1-5` 这个仓库已经转到社区托管的
-`stable-diffusion-v1-5/stable-diffusion-v1-5`，HuggingFace 做了重定向，
-旧 id 目前仍然可用（`check_env.py` 会实测）。教材 L09 §10 和 `nb07` 用的都是旧 id，
-本仓库保持一致；哪天旧 id 失效，把 `MODEL_ID` / `--model_id` 换成新的即可，别的都不用改。
-
-**下载慢或连不上**（国内网络常见）：
-
-```bash
-export HF_ENDPOINT=https://hf-mirror.com     # 用镜像
-export HF_HOME=/path/with/space              # 权重缓存换个大盘
-python check_env.py                          # 确认通道 OK 再开始下载
-```
-
-notebook 里的 `MODEL_ID` 是普通变量，改成本地已下载的目录路径也可以。
-
----
-
-## 提交要求
-
-**截止前将以下内容 push 到你的作业仓库 main 分支**，助教直接在仓库里评分。
-
-```
-（仓库根目录）
-├── 01_inference_walkthrough.ipynb  # 保留输出（助教要看 shape 打印）
-├── 03_lora_finetune.py             # 含你实现的 TODO 13-15
-├── 04_controlnet_demo.ipynb        # 保留输出（如完成）
+~~~text
+project3_stable_diffusion/
+├── 01_inference_walkthrough.ipynb   # A：手写推理，保留执行输出
+├── 02_parameter_sweep.py             # B：CFG/steps/sampler 扫描
+├── 03_lora_finetune.py               # D：LoRA 训练
+├── 04_controlnet_demo.ipynb          # E：Canny ControlNet，保留执行输出
+├── 05_vae_anatomy.ipynb              # C：VAE 四通道与重构
+├── 06_cross_attention_visualization.py
+├── evaluate_lora.py                  # adapter 独立重载评估
+├── prepare_vangogh_dataset.py        # 数据下载与 manifest
+├── check_env.py
+├── experiment_utils.py
+├── tests/
 ├── outputs/
-│   ├── sweep/                      # 任务 B 的扫描图（sweep_cfg / sweep_steps / sweep_sampler / grid_2d）
-│   ├── vae_channels.png            # 任务 C 的 latent 4 通道可视化
-│   ├── lora/                       # 任务 D 的 LoRA 权重（几 MB，直接提交）
-│   └── lora_before_after.png       # 任务 D 的微调前后对比
-├── notes/reading_note_ldm.md       # 任务 A 的 reading note
-├── logs/exp_log.md                 # 实验日志（按 experiment_log_template.md）
-├── report.md                       # 4-6 页报告
-└── debug_log.md                    # 至少 3 条踩坑记录
-```
+│   ├── manual/
+│   ├── sweep/                        # full 扫描图与 metadata
+│   ├── vae_*.png / vae_metrics.json
+│   ├── lora/full/                    # 6.4 MB 最终 adapter、日志、validation
+│   ├── lora/full_eval/               # base 与 200/400/600/800 对比
+│   ├── controlnet/
+│   ├── attention/full/
+│   └── autodl_environment.json
+├── logs/                             # smoke 与 AutoDL 原始日志
+├── reading_notes/                    # LDM/SDXL 阅读笔记
+├── report.md                         # 可审计的原始长报告
+└── README.md                         # 本统一入口
+~~~
 
-`report.md` 需包含：
-1. 任务 A 的推理流程图（手画或 mermaid）+ 每个 tensor shape 的来源
-2. 任务 B 的对比图与分析（2 页）
-3. 任务 C 的 VAE 可视化与发现
-4. 上面「自查问题」
-5. 任务 D/E（如完成）
+## 14. 复现与提交清单
 
-> **notebook 请带输出提交**——清掉输出等于没交。
-> SD 权重、数据集图片不要提交（见 `.gitignore`）；LoRA 权重只有几 MB，可以交。
+### 最小 smoke 顺序
 
----
+1. 运行 check_env.py 和 CPU tests；
+2. 执行 5-step 手写推理和缩小 sweep；
+3. 执行 2-step LoRA 保存/重载；
+4. 执行单 prompt ControlNet 和单 token attention；
+5. 通过后再运行 full sweep、A/C notebook、800-step LoRA、ControlNet 和 attention challenge。
 
-## 常见 Bug
+长任务使用 tmux 或其他持久会话；日志写入 logs/，结束后核对 GPU 显存峰值、loss 是否有限、输出数量和 SHA256。
 
-### 1. CUDA OOM
+### 交付前检查
 
-`pipe.enable_attention_slicing()` 或 `pipe.enable_vae_slicing()`。
+~~~bash
+python -m pytest projects/project3_stable_diffusion/tests -q
+python scripts/check_repo.py
+git status --short
+~~~
 
-### 2. 黑色 NSFW filter 图
+应满足：
 
-`pipe.safety_checker = None`（仅自用，不要分享）。
+- 执行后的 A/C notebook 保留 cell 输出；
+- B 的四张总图和 metadata 齐全；
+- C 的四通道、重构图、crop 和 metrics 齐全；
+- D 的 800-step loss 无 NaN/Inf，adapter 可由全新 pipeline 重载且小于 25 MB；
+- E 至少有四张 ControlNet 风格结果、一张冲突结果和有效 token attention map；
+- Git 不包含基础模型、HF cache、训练原图或临时 checkpoint；
+- 所有数字、图片、命令和结论都能追溯到 outputs、metadata 或 logs。
 
-### 3. LoRA 训练 loss 是 NaN
+## 15. 参考资料
 
-**最常见原因**：LoRA 参数被放进 fp16 直接喂给 AdamW。
+- [LDM: High-Resolution Image Synthesis with Latent Diffusion Models](https://arxiv.org/abs/2112.10752)
+- [SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis](https://arxiv.org/abs/2307.01952)
+- [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
+- [ControlNet: Adding Conditional Control to Text-to-Image Diffusion Models](https://arxiv.org/abs/2302.05543)
+- [Diffusers LoRA documentation](https://huggingface.co/docs/diffusers/en/training/lora)
 
-正确做法见 TODO 14 的提示：冻结的 vae / text_encoder 用 fp16，**UNet 与 LoRA 参数
-保持 fp32**，前向用 `autocast`，反向用 `GradScaler`。脚手架的 `main()` 已经按这个
-方式加载模型了，你只要在 `train_one_step` 里照着写。
-
-先用 `--mixed_precision no` 跑通，确认 loss 正常下降，再开 fp16。
-
-### 4. LoRA 训练 loss 不降
-
-- 检查 LoRA rank 是否合理（L10 §3.5 建议 8-32）
-- learning rate 不要太大（1e-4 起步）
-- 数据集太小（<5 张）很难学到
-- 步数不够：单 object 通常要 500-2000 步（L10 §3.6），几十步是看不出效果的
-
-### 5. 微调后 catastrophic forgetting
-
-LoRA 比 full fine-tune 好得多，但仍可能。
-- 降低 rank
-- 别训过头——效果饱和后继续训只会加剧过拟合，在 500-2000 步区间里多存几个
-  checkpoint 做对比，挑最好的那个
-- 用更多样化的训练 prompt
-
----
-
-## 学术诚信
-
-⚠️ `diffusers` 的 pipeline 源码和官方 LoRA 训练脚本都是很好的参考，但：
-
-- 任务 A **明令禁止调 `pipe(prompt)`**——整个任务的意义就在于自己把 6 步串起来
-- TODO 13-15 允许参考 diffusers 的 `train_text_to_image_lora.py` 的**结构**，
-  但必须自己写、自己调
-- 直接复制粘贴并提交将记 0 分
-- 报告里的"踩坑记录"必须真实——抄来的踩坑是看得出来的
-
----
-
-## 推荐阅读
-
-1. L09 讲义全文；LoRA / ControlNet 部分看 L10 §2-§3
-2. SD 论文（Rombach 2022）§3-§4 —— 导读见 `paper_notes/07_LDM_Rombach2022.md`
-3. LoRA 论文（Hu 2021）—— 导读见 `paper_notes/11_LoRA_Hu2021.md`
-4. ControlNet 论文（Zhang 2023）—— 导读见 `paper_notes/10_ControlNet_Zhang2023.md`
-5. HuggingFace blog 《Annotated Diffusion》《How does Stable Diffusion work?》
-
----
-
-## 给学生的话
-
-很多人能用 SD 但不理解它。本 project 让你"成为能修 SD bug 的人"，而不是"调 prompt 的人"。
-
-完成后你应当能：
-- 解释为什么 CFG=7.5
-- 解释 SD 为什么生成 512×512 而非 1024×1024
-- 解释为什么 SD 不能生成清晰文字
-- 写一个自己的 SD inference 函数
-
-这些是产业级 know-how，比训自己的 SD 更有用。
+本项目的目标不是成为“只会调 prompt 的人”，而是能够解释 latent、CFG、VAE、attention 和条件控制之间的关系，并能定位一个真实的 Stable Diffusion bug。
