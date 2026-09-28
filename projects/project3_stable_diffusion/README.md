@@ -12,9 +12,9 @@
 4. 在冻结基础模型的前提下，用 LoRA 学习梵高风格偏移，并从全新 pipeline 重载验证。
 5. 运行 Canny ControlNet，并提取 cross-attention token 热力图。
 
-实现分支为 codex/monorepo-organization，完整代码和 AutoDL 产物已推送到：
+当前文档与产物位于 my-diffusion-models-starter 的 main 分支；历史实现分支 codex/monorepo-organization 仍保留完整提交记录：
 
-<https://github.com/li-cheng111/diffusion-models-starter/tree/codex/monorepo-organization>
+<https://github.com/li-cheng111/my-diffusion-models-starter/tree/main/projects/project3_stable_diffusion>
 
 ## 2. 实测结果总览
 
@@ -169,7 +169,7 @@ full 运行生成 16 张单图、CFG/steps/sampler 三张总图和一个二维�
 | VAE latent | (1,4,64,64) |
 | 重构 RGB | (1,3,512,512) |
 
-输入为 full sweep 的 grid_2d.png，MSE=0.0019791808，PSNR=27.0351 dB。四个 channel 的 mean/std 写入 outputs/vae_metrics.json。结果表明 VAE 对低频颜色和大形状保持较好，但细小文字、尖锐边缘和高频纹理会被平滑；这也是 latent diffusion 降低计算量时的主要信息瓶颈。
+输入为 outputs/sweep_smoke/grid_2d.png，MSE=0.0019791808，PSNR=27.0351 dB。四个 channel 的 mean/std 写入 outputs/vae_metrics.json。结果表明 VAE 对低频颜色和大形状保持较好，但细小文字、尖锐边缘和高频纹理会被平滑；这也是 latent diffusion 降低计算量时的主要信息瓶颈。
 
 产物：outputs/vae_channels.png、outputs/vae_reconstruction.png、outputs/vae_detail_crop.png、outputs/vae_metrics.json。
 
@@ -310,6 +310,9 @@ project3_stable_diffusion/
 │   └── autodl_environment.json
 ├── logs/                             # smoke 与 AutoDL 原始日志
 ├── reading_notes/                    # LDM/SDXL 阅读笔记
+├── notes/                            # 按原始作业路径提供的 reading note
+├── make_report_figures.py            # 从已提交产物重绘报告图表
+├── outputs/report/                   # 报告内嵌的汇总图与指标图
 ├── report.md                         # 可审计的原始长报告
 └── README.md                         # 本统一入口
 ~~~
