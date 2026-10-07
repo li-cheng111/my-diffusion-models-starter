@@ -114,6 +114,15 @@ python projects/project4_flow_matching/train.py \
 镜像下载约 15 秒，并通过 torchvision 使用的 MD5 校验。checkpoint 和数据保存在 AutoDL
 数据盘，不进入 Git。
 
+发布 release 前，将最终续训 checkpoint 转为不含 optimizer/RNG 的推理文件：
+
+```bash
+python projects/project4_flow_matching/export_checkpoint.py \
+  --input runs/fm_v2_unconditional/latest.pt \
+  --output /root/autodl-tmp/checkpoints/project4-v2-unconditional-step200000.pt
+sha256sum /root/autodl-tmp/checkpoints/project4-v2-unconditional-step200000.pt
+```
+
 ### Project 1 对照与一致评测
 
 先下载已归档的 Project 1 R5 checkpoint，并校验 SHA256：
