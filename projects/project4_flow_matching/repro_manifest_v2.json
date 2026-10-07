@@ -6,6 +6,11 @@
   "hardware": "AutoDL NVIDIA GeForce RTX 4080 SUPER; nvidia-smi reports 32760 MiB",
   "software": "Python 3.12.3, PyTorch 2.8.0+cu128, TorchVision 0.23.0+cu128",
   "dataset": "CIFAR-10 train split",
+  "dataset_archive": {
+    "url": "https://hf-mirror.com/datasets/MIT-OL-AI-D/cifar-10-python/resolve/a48007227f9e2cd0af96175f4afb5ac4965e261b/cifar-10-python.tar.gz",
+    "bytes": 170498071,
+    "md5": "c58f30108f718f92721af3b95e74349a"
+  },
   "model": "DiT-S, 32.62M parameters, continuous time embedding scale 1000",
   "training": {
     "steps": 200000,

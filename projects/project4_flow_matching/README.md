@@ -109,7 +109,8 @@ python projects/project4_flow_matching/train.py \
 ```
 
 若进程中断，用同一条命令并追加 `--resume runs/<实验>/latest.pt`。4080 SUPER 上
-100-step 预跑测得 10.8 step/s，按此速度单个 200K 训练约 5.2 小时，两组约 10.4 小时；
+100-step 预跑为 10.8 step/s；正式 FM-U 到 step 6,400 后稳定在 12.06 step/s，按此
+速度单个 200K 训练约 4.6 小时，两组约 9.2 小时。保存 checkpoint 会增加少量耗时，
 正式训练时以仪表盘实时速度更新 ETA。CIFAR-10 压缩包约 170 MB，本实例从固定版本的
 镜像下载约 15 秒，并通过 torchvision 使用的 MD5 校验。checkpoint 和数据保存在 AutoDL
 数据盘，不进入 Git。
