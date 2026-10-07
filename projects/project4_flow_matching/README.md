@@ -151,14 +151,14 @@ FM-U 的无条件 Euler 曲线：
 ```bash
 python projects/project4_flow_matching/eval_fid.py \
   --model runs/fm_v2_unconditional/latest.pt \
-  --condition unconditional --solver euler --nfe 4 8 16 32 50 \
+  --condition unconditional --solver euler heun --nfe 4 8 16 32 50 \
   --num_samples 5000 --batch_size 64 --seeds 42 \
-  --output projects/project4_flow_matching/results/fm_v2_unconditional_euler.json
+  --output projects/project4_flow_matching/results/fm_v2_unconditional_solvers.json
 ```
 
-为比较积分器，Heun 的步数设为 Euler 的一半，使实际网络前向次数相等，
-例如 Euler 8 步与 Heun 4 步都记为每样本 8 次网络求值。原始 JSON 会同时保存
-积分步数和网络求值数。FM-C 的 CFG 扫描显式使用两种标签预测：
+绘图横轴按实际网络求值次数对齐；Heun 每步需要两次前向，例如 Euler 8 步与
+Heun 4 步都记为每图 8 次网络求值。原始 JSON 会同时保存积分步数和网络求值数。
+FM-C 的 CFG 扫描显式使用两种标签预测：
 
 ```bash
 python projects/project4_flow_matching/eval_fid.py \

@@ -28,7 +28,7 @@ def reduce_seeds(rows):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fm", default="results/fm_v2_unconditional_euler.json")
+    parser.add_argument("--fm", default="results/fm_v2_unconditional_solvers.json")
     parser.add_argument("--ddpm", default="../project2_samplers/results/p1_r5_ddim_5k.json")
     parser.add_argument("--output", default="results/nfe_fid_curve.png")
     args = parser.parse_args()
