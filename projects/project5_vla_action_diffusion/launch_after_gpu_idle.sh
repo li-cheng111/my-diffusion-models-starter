@@ -3,7 +3,9 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_ROOT="${RUN_ROOT:-$PROJECT_DIR/runs/project5_fair}"
-WAIT_PATTERN="${GPU_WAIT_PATTERN:-projects/project4_flow_matching/train.py}"
+# Project 4's training process can finish before its FID sweeps and packaging
+# finish. Wait for the entire Project 4 workflow, not just train.py.
+WAIT_PATTERN="${GPU_WAIT_PATTERN:-projects/project4_flow_matching/|post_project4_eval\.sh|package_project4_assets\.sh}"
 QUEUE_DIR="$RUN_ROOT/_queue"
 QUEUE_STATUS="$QUEUE_DIR/status.json"
 mkdir -p "$QUEUE_DIR" "$PROJECT_DIR/logs"
@@ -14,7 +16,7 @@ write_status() {
     "$state" "$message" "$(date -Is)" > "$QUEUE_STATUS"
 }
 
-write_status waiting_gpu "Waiting for existing Project 4 GPU training to finish"
+write_status waiting_gpu "Waiting for Project 4 evaluation and asset packaging to finish"
 while pgrep -f "$WAIT_PATTERN" >/dev/null; do
   sleep 30
 done
@@ -29,7 +31,7 @@ while (( idle_samples < 3 )); do
   else
     idle_samples=0
   fi
-  write_status waiting_gpu "GPU utilization ${utilization:-unknown}%; waiting for three idle samples"
+  write_status waiting_gpu "Project 4 is finished; GPU utilization ${utilization:-unknown}%; waiting for three idle samples"
   sleep 30
 done
 
