@@ -66,6 +66,28 @@ def process_running(name):
         return False
 
 
+def rolling_speed(rows, fallback=0.0, intervals=10):
+    """Estimate current throughput from the latest elapsed-time samples."""
+    if len(rows) < 2:
+        try:
+            return float(fallback or 0.0), 0
+        except (TypeError, ValueError):
+            return 0.0, 0
+    first = rows[max(0, len(rows) - intervals - 1)]
+    last = rows[-1]
+    try:
+        elapsed = float(last['elapsed_seconds']) - float(first['elapsed_seconds'])
+        steps = int(float(last['step'])) - int(float(first['step']))
+        if elapsed > 0 and steps > 0:
+            return steps / elapsed, steps
+    except (KeyError, TypeError, ValueError):
+        pass
+    try:
+        return float(fallback or 0.0), 0
+    except (TypeError, ValueError):
+        return 0.0, 0
+
+
 def status(root):
     root = Path(root)
     storage_root = root
@@ -92,6 +114,7 @@ def status(root):
             selected, selected_rows = folder, rows
     selected = selected or run_root / 'fm_v2_unconditional'
     last = selected_rows[-1] if selected_rows else {}
+    speed, speed_window_steps = rolling_speed(selected_rows, last.get('step_per_sec'))
     cfg_path = root / 'projects/project4_flow_matching/configs' / f'cifar10_{selected.name}.yaml'
     max_steps = 200000
     if cfg_path and cfg_path.exists():
@@ -110,7 +133,7 @@ def status(root):
             history.append({'step': int(row['step']), 'loss': float(row['loss_100'])})
         except (ValueError, KeyError):
             continue
-    return {'state':'running' if running else ('training' if last else 'waiting'), 'stage':'正式训练' if running else ('已训练/等待启动' if last else '等待训练'), 'host':os.uname().nodename if hasattr(os,'uname') else 'AutoDL', 'run_dir':str(selected), 'runs':run_cards, 'training':{'step':int(float(last.get('step') or 0)), 'loss':last.get('loss_100'), 'lr':last.get('lr'), 'speed':last.get('step_per_sec'), 'elapsed':last.get('elapsed_seconds'), 'max_steps':max_steps}, 'history':history[-300:], 'gpu':gpu_info(), 'checkpoint':checkpoint_text, 'log':tail(storage_root / 'logs' / f'{selected.name}.log'), 'timestamp':time.time()}
+    return {'state':'running' if running else ('training' if last else 'waiting'), 'stage':'正式训练' if running else ('已训练/等待启动' if last else '等待训练'), 'host':os.uname().nodename if hasattr(os,'uname') else 'AutoDL', 'run_dir':str(selected), 'runs':run_cards, 'training':{'step':int(float(last.get('step') or 0)), 'loss':last.get('loss_100'), 'lr':last.get('lr'), 'speed':speed, 'speed_window_steps':speed_window_steps, 'elapsed':last.get('elapsed_seconds'), 'max_steps':max_steps}, 'history':history[-300:], 'gpu':gpu_info(), 'checkpoint':checkpoint_text, 'log':tail(storage_root / 'logs' / f'{selected.name}.log'), 'timestamp':time.time()}
 
 
 def main():

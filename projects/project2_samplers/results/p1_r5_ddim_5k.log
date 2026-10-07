@@ -1,0 +1,57 @@
+
+[benchmark] sampler=ddim, steps=10, NFE=10
+    generated 640/5000
+    generated 1280/5000
+    generated 1920/5000
+    generated 2560/5000
+    generated 3200/5000
+    generated 3840/5000
+    generated 4480/5000
+    generated 5000/5000
+    FID=53.0907, sampling=47.7s
+
+[benchmark] sampler=ddim, steps=20, NFE=20
+    generated 640/5000
+    generated 1280/5000
+    generated 1920/5000
+    generated 2560/5000
+    generated 3200/5000
+    generated 3840/5000
+    generated 4480/5000
+    generated 5000/5000
+    FID=33.6099, sampling=93.6s
+
+[benchmark] sampler=ddim, steps=50, NFE=50
+    generated 640/5000
+    generated 1280/5000
+    generated 1920/5000
+    generated 2560/5000
+    generated 3200/5000
+    generated 3840/5000
+    generated 4480/5000
+    generated 5000/5000
+    FID=23.1206, sampling=233.4s
+
+[benchmark] sampler=ddim, steps=100, NFE=100
+    generated 640/5000
+    generated 1280/5000
+    generated 1920/5000
+    generated 2560/5000
+    generated 3200/5000
+    generated 3840/5000
+    generated 4480/5000
+    generated 5000/5000
+    FID=20.1105, sampling=466.5s
+
+[benchmark] sampler=ddim, steps=250, NFE=250
+    generated 640/5000
+    generated 1280/5000
+    generated 1920/5000
+    generated 2560/5000
+    generated 3200/5000
+    generated 3840/5000
+    generated 4480/5000
+    generated 5000/5000
+    FID=18.3625, sampling=1165.2s
+
+Saved projects/project2_samplers/results/p1_r5_ddim_5k.json and projects/project2_samplers/results/p1_r5_ddim_5k.png

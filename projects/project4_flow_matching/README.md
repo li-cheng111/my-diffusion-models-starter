@@ -109,11 +109,12 @@ python projects/project4_flow_matching/train.py \
 ```
 
 若进程中断，用同一条命令并追加 `--resume runs/<实验>/latest.pt`。4080 SUPER 上
-100-step 预跑为 10.8 step/s；正式 FM-U 到 step 6,400 后稳定在 12.06 step/s，按此
-速度单个 200K 训练约 4.6 小时，两组约 9.2 小时。保存 checkpoint 会增加少量耗时，
-正式训练时以仪表盘实时速度更新 ETA。CIFAR-10 压缩包约 170 MB，本实例从固定版本的
-镜像下载约 15 秒，并通过 torchvision 使用的 MD5 校验。checkpoint 和数据保存在 AutoDL
-数据盘，不进入 Git。
+100-step 预跑为 10.8 step/s；单个 200K 训练预算约 4.6 小时。此次 FM-U 实测总耗时
+4.83 小时，期间与约 35 分钟的 Project1 基线评测共用 GPU；基线结束后 FM-U 最近 1,000
+步恢复到约 12.66 step/s。FM-C 当前稳定约 12.87 step/s，预计约 4.3 小时，完成后会在
+实验报告中记录最终时长。CIFAR-10 压缩包约 170 MB，本实例从固定版本的镜像下载约
+15 秒，并通过 torchvision 使用的 MD5 校验。可续训 checkpoint 和数据保存在 AutoDL
+数据盘；最终推理 checkpoint 附在 GitHub Release，不放入 Git 对象库。
 
 发布 release 前，将最终续训 checkpoint 转为不含 optimizer/RNG 的推理文件：
 
@@ -142,9 +143,20 @@ seed 42 和同一份项目依赖，测 Project 1 DDIM 基线：
 python -m projects.project2_samplers.benchmark \
   --ckpt /root/autodl-tmp/checkpoints/p1-r5.pt --sampler ddim \
   --steps 10 20 50 100 250 --num_samples 5000 --batch_size 64 --seed 42 \
+  --ema_decay 0.9999 --num_workers 4 \
   --output projects/project2_samplers/results/p1_r5_ddim_5k.json \
   --plot projects/project2_samplers/results/p1_r5_ddim_5k.png
 ```
+
+AutoDL RTX 4080 SUPER 上已完成的 R5 基线结果如下。FID 计时使用同一组 5,000 张真实图；五点采样总计 2,006.3 秒，FID 计算总计 83.0 秒，完整扫描约 34 分 49 秒。原始 JSON、曲线、运行日志和每个 NFE 的预览图保存在 `projects/project2_samplers/results/` 与 `projects/project2_samplers/samples/r5_baseline/`。
+
+| DDIM NFE | FID | 采样时间 | FID 计算时间 |
+|---:|---:|---:|---:|
+| 10 | 53.0907 | 47.7 秒 | 18.0 秒 |
+| 20 | 33.6099 | 93.6 秒 | 16.6 秒 |
+| 50 | 23.1206 | 233.4 秒 | 15.0 秒 |
+| 100 | 20.1105 | 466.5 秒 | 16.9 秒 |
+| 250 | 18.3625 | 1,165.2 秒 | 16.5 秒 |
 
 FM-U 的无条件 Euler 曲线：
 
