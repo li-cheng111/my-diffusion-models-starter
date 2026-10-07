@@ -132,8 +132,8 @@ seed 42 和同一份项目依赖，测 Project 1 DDIM 基线：
 python -m projects.project2_samplers.benchmark \
   --ckpt /root/autodl-tmp/checkpoints/p1-r5.pt --sampler ddim \
   --steps 10 20 50 100 250 --num_samples 5000 --batch_size 64 --seed 42 \
-  --output projects/project2_samplers/runs/p1_r5_ddim_5k.json \
-  --plot projects/project2_samplers/runs/p1_r5_ddim_5k.png
+  --output projects/project2_samplers/results/p1_r5_ddim_5k.json \
+  --plot projects/project2_samplers/results/p1_r5_ddim_5k.png
 ```
 
 FM-U 的无条件 Euler 曲线：
