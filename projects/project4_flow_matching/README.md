@@ -96,18 +96,23 @@ AutoDL 单卡 RTX 4080 SUPER（16GB）运行时，从仓库根目录执行：
 
 ```bash
 pip install -r requirements/project4.txt
+mkdir -p data
+curl -fL -o data/cifar-10-python.tar.gz \
+  https://hf-mirror.com/datasets/MIT-OL-AI-D/cifar-10-python/resolve/a48007227f9e2cd0af96175f4afb5ac4965e261b/cifar-10-python.tar.gz
+echo 'c58f30108f718f92721af3b95e74349a  data/cifar-10-python.tar.gz' | md5sum -c -
 python projects/project4_flow_matching/train.py \
   --config projects/project4_flow_matching/configs/cifar10_fm_v2_unconditional.yaml \
-  --output /root/autodl-tmp/runs/fm_v2_unconditional --seed 42 --precision bf16
+  --output runs/fm_v2_unconditional --seed 42 --precision bf16
 python projects/project4_flow_matching/train.py \
   --config projects/project4_flow_matching/configs/cifar10_fm_v2_conditional.yaml \
-  --output /root/autodl-tmp/runs/fm_v2_conditional --seed 42 --precision bf16
+  --output runs/fm_v2_conditional --seed 42 --precision bf16
 ```
 
-若进程中断，用同一条命令并追加 `--resume /root/autodl-tmp/runs/<实验>/latest.pt`。
-从已有日志估计，4080 SUPER 上每个 200K 训练预计约 8–14 小时；先测短跑吞吐，
-再以仪表盘显示的速度动态给出准确 ETA。CIFAR-10 首次下载通常需要几分钟到十几分钟，
-取决于 AutoDL 到数据源的带宽。checkpoint 和数据保存在数据盘，不进入 Git。
+若进程中断，用同一条命令并追加 `--resume runs/<实验>/latest.pt`。4080 SUPER 上
+100-step 预跑测得 10.8 step/s，按此速度单个 200K 训练约 5.2 小时，两组约 10.4 小时；
+正式训练时以仪表盘实时速度更新 ETA。CIFAR-10 压缩包约 170 MB，本实例从固定版本的
+镜像下载约 15 秒，并通过 torchvision 使用的 MD5 校验。checkpoint 和数据保存在 AutoDL
+数据盘，不进入 Git。
 
 ### Project 1 对照与一致评测
 
@@ -135,7 +140,7 @@ FM-U 的无条件 Euler 曲线：
 
 ```bash
 python projects/project4_flow_matching/eval_fid.py \
-  --model /root/autodl-tmp/runs/fm_v2_unconditional/latest.pt \
+  --model runs/fm_v2_unconditional/latest.pt \
   --condition unconditional --solver euler --nfe 4 8 16 32 50 \
   --num_samples 5000 --batch_size 64 --seeds 42 \
   --output projects/project4_flow_matching/results/fm_v2_unconditional_euler.json
@@ -147,7 +152,7 @@ python projects/project4_flow_matching/eval_fid.py \
 
 ```bash
 python projects/project4_flow_matching/eval_fid.py \
-  --model /root/autodl-tmp/runs/fm_v2_conditional/latest.pt \
+  --model runs/fm_v2_conditional/latest.pt \
   --condition cfg --solver euler --nfe 20 --cfg 1 2 3 5 7.5 \
   --num_samples 5000 --batch_size 64 --seeds 42 \
   --output projects/project4_flow_matching/results/fm_v2_conditional_cfg.json
@@ -162,14 +167,14 @@ python projects/project4_flow_matching/eval_fid.py \
 训练进度页面只读训练 CSV、GPU 使用率和最近日志，每两秒刷新。实例中启动：
 
 ```bash
-mkdir -p /root/autodl-tmp/logs /root/autodl-tmp/runs
+mkdir -p logs runs
 nohup python projects/project4_flow_matching/monitor_dashboard.py \
-  --host 0.0.0.0 --port 6006 > /root/autodl-tmp/logs/dashboard.log 2>&1 &
+  --host 0.0.0.0 --port 6006 > logs/dashboard.log 2>&1 &
 nohup python projects/project4_flow_matching/train.py \
   --config projects/project4_flow_matching/configs/cifar10_fm_v2_unconditional.yaml \
-  --output /root/autodl-tmp/runs/fm_v2_unconditional \
+  --output runs/fm_v2_unconditional \
   --seed 42 --precision bf16 \
-  > /root/autodl-tmp/logs/fm_v2_unconditional.log 2>&1 &
+  > logs/fm_v2_unconditional.log 2>&1 &
 ```
 
 第一组训练结束后，再启动 FM-C（不要同时占用这张卡训练两个模型）。在 AutoDL

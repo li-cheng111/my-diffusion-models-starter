@@ -68,8 +68,13 @@ def process_running(name):
 
 def status(root):
     root = Path(root)
-    candidates = sorted(root.glob('runs/fm_v2_*'))
-    candidates += [root / 'runs/fm'] if (root / 'runs/fm').exists() else []
+    storage_root = root
+    run_root = root / 'runs'
+    if not run_root.exists():
+        run_root = root.parent / 'runs'
+        storage_root = root.parent
+    candidates = sorted(run_root.glob('fm_v2_*'))
+    candidates += [run_root / 'fm'] if (run_root / 'fm').exists() else []
     run_cards, selected, selected_rows = [], None, []
     latest_mtime = -1.0
     for folder in candidates:
@@ -85,7 +90,7 @@ def status(root):
         if rows and csv_path.stat().st_mtime >= latest_mtime:
             latest_mtime = csv_path.stat().st_mtime
             selected, selected_rows = folder, rows
-    selected = selected or root / 'runs/fm_v2_unconditional'
+    selected = selected or run_root / 'fm_v2_unconditional'
     last = selected_rows[-1] if selected_rows else {}
     cfg_path = root / 'projects/project4_flow_matching/configs' / f'cifar10_{selected.name}.yaml'
     max_steps = 200000
@@ -105,7 +110,7 @@ def status(root):
             history.append({'step': int(row['step']), 'loss': float(row['loss_100'])})
         except (ValueError, KeyError):
             continue
-    return {'state':'running' if running else ('training' if last else 'waiting'), 'stage':'正式训练' if running else ('已训练/等待启动' if last else '等待训练'), 'host':os.uname().nodename if hasattr(os,'uname') else 'AutoDL', 'run_dir':str(selected), 'runs':run_cards, 'training':{'step':int(float(last.get('step') or 0)), 'loss':last.get('loss_100'), 'lr':last.get('lr'), 'speed':last.get('step_per_sec'), 'elapsed':last.get('elapsed_seconds'), 'max_steps':max_steps}, 'history':history[-300:], 'gpu':gpu_info(), 'checkpoint':checkpoint_text, 'log':tail(root / 'logs' / f'{selected.name}.log'), 'timestamp':time.time()}
+    return {'state':'running' if running else ('training' if last else 'waiting'), 'stage':'正式训练' if running else ('已训练/等待启动' if last else '等待训练'), 'host':os.uname().nodename if hasattr(os,'uname') else 'AutoDL', 'run_dir':str(selected), 'runs':run_cards, 'training':{'step':int(float(last.get('step') or 0)), 'loss':last.get('loss_100'), 'lr':last.get('lr'), 'speed':last.get('step_per_sec'), 'elapsed':last.get('elapsed_seconds'), 'max_steps':max_steps}, 'history':history[-300:], 'gpu':gpu_info(), 'checkpoint':checkpoint_text, 'log':tail(storage_root / 'logs' / f'{selected.name}.log'), 'timestamp':time.time()}
 
 
 def main():

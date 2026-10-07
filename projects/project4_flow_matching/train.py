@@ -197,7 +197,7 @@ def train(cfg, output_dir, seed=42, precision='fp32', resume=None):
             random.setstate(rng['python'])
             data_generator.set_state(rng['data_generator'].cpu())
             if torch.cuda.is_available() and rng.get('cuda') is not None:
-                torch.cuda.set_rng_state_all(rng['cuda'])
+                torch.cuda.set_rng_state_all([state.cpu() for state in rng['cuda']])
         print(f"Resumed from {resume} at step {step}")
 
     initial_step = step
