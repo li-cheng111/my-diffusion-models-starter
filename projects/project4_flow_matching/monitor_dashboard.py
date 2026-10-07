@@ -29,7 +29,7 @@ HTML = r'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 const $=id=>document.getElementById(id), esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function duration(s){if(!Number.isFinite(+s))return '—';s=Math.max(0,+s);let h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}小时${m}分`:`${m}分钟`}
 function chart(points){let c=$('chart'),ctx=c.getContext('2d'),w=c.clientWidth,h=220,dpr=devicePixelRatio||1;c.width=w*dpr;c.height=h*dpr;ctx.scale(dpr,dpr);ctx.clearRect(0,0,w,h);if(points.length<2){ctx.fillStyle='#91a0bf';ctx.fillText('累计 2 个日志点后显示曲线',12,24);return}let vals=points.map(p=>p.loss),lo=Math.min(...vals),hi=Math.max(...vals),pad=20;ctx.strokeStyle='#293650';ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();ctx.strokeStyle='#64b5ff';ctx.lineWidth=2;ctx.beginPath();points.forEach((p,i)=>{let x=pad+(w-2*pad)*i/(points.length-1),y=pad+(h-2*pad)*(1-(p.loss-lo)/(hi-lo||1));i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();ctx.fillStyle='#91a0bf';ctx.fillText(`loss ${lo.toFixed(3)} – ${hi.toFixed(3)}`,pad+4,pad+12)}
-function render(d){let t=d.training||{},g=d.gpu||{};$('host').textContent=`${d.host} · ${d.run_dir}`;$('state').textContent=(d.state||'waiting').toUpperCase();$('stage').textContent=d.stage||'等待启动';$('updated').textContent=`step ${t.step||0} · ${d.checkpoint||'尚无 checkpoint'}`;$('steps').textContent=`${t.step||0} / ${t.max_steps||'—'}`;let percent=t.max_steps?100*t.step/t.max_steps:0;$('pct').textContent=`${percent.toFixed(2)}%`;$('bar').style.width=`${Math.min(100,percent)}%`;$('speed').textContent=t.speed?`${Number(t.speed).toFixed(2)} step/s`:'—';$('eta').textContent=t.speed&&t.max_steps?`预计还需 ${duration((t.max_steps-t.step)/t.speed)}`:'等待速度数据';$('loss').textContent=t.loss?Number(t.loss).toFixed(4):'—';$('lr').textContent=t.lr?`LR ${Number(t.lr).toExponential(2)}`:'—';let rows=[['GPU 利用率',g.utilization==null?'—':`${g.utilization}%`],['显存',g.memory||'—'],['温度 / 功耗',`${g.temperature||'—'}°C / ${g.power||'—'}W`],['最新 checkpoint',d.checkpoint||'—'],['更新时间',new Date(d.timestamp*1000).toLocaleTimeString()]];$('gpu').innerHTML=rows.map(x=>`<div class="metric"><span>${esc(x[0])}</span><b>${esc(x[1])}</b></div>`).join('');$('log').textContent=d.log||'等待训练日志…';$('runs').innerHTML=(d.runs||[]).map(x=>`<span class="run">${esc(x.name)} · ${esc(x.step)} steps · ${esc(x.status)}</span>`).join('');chart(d.history||[]);$('clock').textContent=new Date().toLocaleTimeString()}
+function render(d){let t=d.training||{},g=d.gpu||{};$('host').textContent=`${d.host} · ${d.run_dir}`;$('state').textContent=(d.state||'waiting').toUpperCase();$('stage').textContent=d.stage||'等待启动';$('updated').textContent=`step ${t.step||0} · ${d.checkpoint||'尚无 checkpoint'}`;$('steps').textContent=`${t.step||0} / ${t.max_steps||'—'}`;let percent=t.max_steps?100*t.step/t.max_steps:0;$('pct').textContent=`${percent.toFixed(2)}%`;$('bar').style.width=`${Math.min(100,percent)}%`;$('speed').textContent=t.speed?`${Number(t.speed).toFixed(2)} step/s`:'—';$('eta').textContent=d.state==='completed'?'训练已完成':(t.speed&&t.max_steps?`预计还需 ${duration((t.max_steps-t.step)/t.speed)}`:'等待速度数据');$('loss').textContent=t.loss?Number(t.loss).toFixed(4):'—';$('lr').textContent=t.lr?`LR ${Number(t.lr).toExponential(2)}`:'—';let rows=[['GPU 利用率',g.utilization==null?'—':`${g.utilization}%`],['显存',g.memory||'—'],['温度 / 功耗',`${g.temperature||'—'}°C / ${g.power||'—'}W`],['最新 checkpoint',d.checkpoint||'—'],['更新时间',new Date(d.timestamp*1000).toLocaleTimeString()]];$('gpu').innerHTML=rows.map(x=>`<div class="metric"><span>${esc(x[0])}</span><b>${esc(x[1])}</b></div>`).join('');$('log').textContent=d.log||'等待训练日志…';$('runs').innerHTML=(d.runs||[]).map(x=>`<span class="run">${esc(x.name)} · ${esc(x.step)} steps · ${esc(x.status)}</span>`).join('');chart(d.history||[]);$('clock').textContent=new Date().toLocaleTimeString()}
 async function refresh(){try{let r=await fetch('/api/status?t='+Date.now(),{cache:'no-store'});render(await r.json())}catch(e){$('state').textContent='OFFLINE';$('host').textContent=String(e)}}refresh();setInterval(refresh,2000);addEventListener('resize',()=>refresh());
 </script></body></html>'''
 
@@ -133,7 +133,31 @@ def status(root):
             history.append({'step': int(row['step']), 'loss': float(row['loss_100'])})
         except (ValueError, KeyError):
             continue
-    return {'state':'running' if running else ('training' if last else 'waiting'), 'stage':'正式训练' if running else ('已训练/等待启动' if last else '等待训练'), 'host':os.uname().nodename if hasattr(os,'uname') else 'AutoDL', 'run_dir':str(selected), 'runs':run_cards, 'training':{'step':int(float(last.get('step') or 0)), 'loss':last.get('loss_100'), 'lr':last.get('lr'), 'speed':speed, 'speed_window_steps':speed_window_steps, 'elapsed':last.get('elapsed_seconds'), 'max_steps':max_steps}, 'history':history[-300:], 'gpu':gpu_info(), 'checkpoint':checkpoint_text, 'log':tail(storage_root / 'logs' / f'{selected.name}.log'), 'timestamp':time.time()}
+    latest_step = int(float(last.get('step') or 0))
+    completed = bool(last) and latest_step >= max_steps and not running
+    state = 'running' if running else ('completed' if completed else ('training' if last else 'waiting'))
+    stage = '正式训练' if running else ('训练完成' if completed else ('已训练/等待启动' if last else '等待训练'))
+    return {
+        'state': state,
+        'stage': stage,
+        'host': os.uname().nodename if hasattr(os, 'uname') else 'AutoDL',
+        'run_dir': str(selected),
+        'runs': run_cards,
+        'training': {
+            'step': latest_step,
+            'loss': last.get('loss_100'),
+            'lr': last.get('lr'),
+            'speed': speed,
+            'speed_window_steps': speed_window_steps,
+            'elapsed': last.get('elapsed_seconds'),
+            'max_steps': max_steps,
+        },
+        'history': history[-300:],
+        'gpu': gpu_info(),
+        'checkpoint': checkpoint_text,
+        'log': tail(storage_root / 'logs' / f'{selected.name}.log'),
+        'timestamp': time.time(),
+    }
 
 
 def main():

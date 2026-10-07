@@ -1,6 +1,6 @@
 {
   "project": "Project 4 Flow Matching v2",
-  "status": "implementation prepared; AutoDL training and evaluation pending",
+  "status": "complete; trained to 200000 steps; evaluations and assets verified",
   "repository": "https://github.com/li-cheng111/my-diffusion-models-starter",
   "planned_release_tag": "project4-v2.0",
   "hardware": "AutoDL NVIDIA GeForce RTX 4080 SUPER; nvidia-smi reports 32760 MiB",
@@ -17,10 +17,19 @@
     "batch_size": 64,
     "precision": "BF16 autocast",
     "seed": 42,
-    "ema_decays": [0.999, 0.9995, 0.9999],
+    "ema_decays": [
+      0.999,
+      0.9995,
+      0.9999
+    ],
     "warmup_steps": 2000,
     "cosine_decay_start": 100000,
-    "snapshot_interval": 50000
+    "snapshot_interval": 50000,
+    "actual_elapsed_hours": {
+      "unconditional": 4.83,
+      "conditional_logged": 4.36
+    },
+    "recovery_note": "The conditional process stopped after logging step 193000. It resumed from the last durable step-190000 checkpoint and completed step 200000. The 3000 uncheckpointed steps were recomputed; elapsed_seconds in the final checkpoint is 4.36 hours and excludes that discarded partial segment."
   },
   "runs": {
     "unconditional": "projects/project4_flow_matching/configs/cifar10_fm_v2_unconditional.yaml (cond_drop_prob=1.0)",
@@ -33,9 +42,59 @@
     "batch_size": 64,
     "seed": 42,
     "ema": 0.9999,
-    "solvers": ["Euler", "Heun"],
-    "note": "CFG always uses null and class predictions; reported network evaluations account for its 2x cost."
+    "solvers": [
+      "Euler",
+      "Heun"
+    ],
+    "note": "CFG always uses null and class predictions; reported network evaluations account for its 2x cost.",
+    "cfg_scales": [
+      1.0,
+      2.0,
+      3.0,
+      5.0,
+      7.5
+    ],
+    "seed_limitation": "One seed (42) per setting; report single-run FID and treat small differences cautiously.",
+    "measured_runtime_minutes": {
+      "unconditional_euler_heun_sampling_plus_fid": 20.2,
+      "conditional_cfg_sampling_plus_fid": 13.0
+    }
   },
-  "checkpoint_assets": "To be populated after training and SHA256 verification",
-  "dashboard": "python projects/project4_flow_matching/monitor_dashboard.py --host 0.0.0.0 --port 6006"
+  "checkpoint_assets": [
+    {
+      "file": "project4-v2-conditional-step200000.pt",
+      "bytes": 522146099,
+      "sha256": "25666b32e914002778825a02f8e14c89f9f5ff081f9dded9f3e0ad6e0283c5aa",
+      "step": 200000,
+      "weights": "EMA_0.9999"
+    },
+    {
+      "file": "project4-v2-unconditional-step200000.pt",
+      "bytes": 522147167,
+      "sha256": "b75cbe3d4f9aeb16c66cb53e4acb03f9c2c6a18421efd945f78475cd2e114571",
+      "step": 200000,
+      "weights": "EMA_0.9999"
+    }
+  ],
+  "dashboard": "python projects/project4_flow_matching/monitor_dashboard.py --host 0.0.0.0 --port 6006",
+  "source_branch": "codex/project4-v2",
+  "source_commit_at_run": "13221ce220cd6ee96bd7266be3d30c6559c112d6",
+  "repository_record_commit_before_results": "f726c17",
+  "result_files": {
+    "unconditional_solvers": "results/fm_v2_unconditional_solvers.json",
+    "conditional_cfg": "results/fm_v2_conditional_cfg.json",
+    "nfe_fid_plot": "results/nfe_fid_curve_v2.png",
+    "project1_baseline": "../project2_samplers/results/p1_r5_ddim_5k.json"
+  },
+  "results_bundle": {
+    "file": "project4_v2_results_only.tar.gz",
+    "bytes": 654483,
+    "sha256": "e8ea255f9ae63f666b47bbdab30d494307285d9ba30b7276e248ce800bf8802a",
+    "contains": [
+      "results JSON",
+      "sample grids",
+      "training CSVs",
+      "training/evaluation logs"
+    ]
+  }
 }

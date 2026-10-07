@@ -109,11 +109,12 @@ python projects/project4_flow_matching/train.py \
 ```
 
 若进程中断，用同一条命令并追加 `--resume runs/<实验>/latest.pt`。4080 SUPER 上
-100-step 预跑为 10.8 step/s；单个 200K 训练预算约 4.6 小时。此次 FM-U 实测总耗时
-4.83 小时，期间与约 35 分钟的 Project1 基线评测共用 GPU；基线结束后 FM-U 最近 1,000
-步恢复到约 12.66 step/s。FM-C 当前稳定约 12.87 step/s，预计约 4.3 小时，完成后会在
-实验报告中记录最终时长。CIFAR-10 压缩包约 170 MB，本实例从固定版本的镜像下载约
-15 秒，并通过 torchvision 使用的 MD5 校验。可续训 checkpoint 和数据保存在 AutoDL
+100-step 预跑为 10.8 step/s；单个 200K 训练预算约 4.6 小时。此次 FM-U 实测 4.83 小时，
+期间与约 35 分钟的 Project1 基线评测共用 GPU；基线结束后稳定在约 12.7 step/s。FM-C
+最终 checkpoint 记录的累计训练时间为 4.36 小时，最终 loss 为 0.1665。进程在记录到
+193K 后意外退出；从最后完整的 190K checkpoint 恢复，补跑至 200K。未保存的 3K 步不计入
+checkpoint 的 4.36 小时累计值，恢复过程和两段原始日志均已归档。CIFAR-10 压缩包约
+170 MB，固定镜像下载约 15 秒，并通过 MD5 校验。可续训 checkpoint 和数据保存在 AutoDL
 数据盘；最终推理 checkpoint 附在 GitHub Release，不放入 Git 对象库。
 
 发布 release 前，将最终续训 checkpoint 转为不含 optimizer/RNG 的推理文件：
@@ -123,6 +124,25 @@ python projects/project4_flow_matching/export_checkpoint.py \
   --input runs/fm_v2_unconditional/latest.pt \
   --output /root/autodl-tmp/checkpoints/project4-v2-unconditional-step200000.pt
 sha256sum /root/autodl-tmp/checkpoints/project4-v2-unconditional-step200000.pt
+```
+
+已训练完成的 EMA 推理权重和评测/日志归档可从 GitHub Release 下载。权重哈希也记录在
+[`results/checkpoint_sha256.txt`](results/checkpoint_sha256.txt) 与
+[`repro_manifest_v2.json`](repro_manifest_v2.json) 中：
+
+```bash
+mkdir -p checkpoints
+wget -O checkpoints/project4-v2-unconditional-step200000.pt \
+  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project4-v2.0/project4-v2-unconditional-step200000.pt
+wget -O checkpoints/project4-v2-conditional-step200000.pt \
+  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project4-v2.0/project4-v2-conditional-step200000.pt
+wget -O project4_v2_results_only.tar.gz \
+  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project4-v2.0/project4_v2_results_only.tar.gz
+wget -O project4_v2_results_only.tar.gz.sha256 \
+  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project4-v2.0/project4_v2_results_only.tar.gz.sha256
+sha256sum -c project4_v2_results_only.tar.gz.sha256
+echo 'b75cbe3d4f9aeb16c66cb53e4acb03f9c2c6a18421efd945f78475cd2e114571  checkpoints/project4-v2-unconditional-step200000.pt' | sha256sum -c -
+echo '25666b32e914002778825a02f8e14c89f9f5ff081f9dded9f3e0ad6e0283c5aa  checkpoints/project4-v2-conditional-step200000.pt' | sha256sum -c -
 ```
 
 ### Project 1 对照与一致评测
@@ -183,6 +203,44 @@ python projects/project4_flow_matching/eval_fid.py \
 `--condition unconditional` 始终输入 null token，`conditional` 始终输入平衡的真实类别，
 `cfg` 才执行 $v_u+s(v_c-v_u)$；CFG 每步的网络求值成本是条件或无条件单路的两倍。
 重复种子时用 `--seeds 42 43 44`，报告均值和离散程度，不把单个 seed 说成稳定结论。
+
+### v2 本次实测结果
+
+两组模型均训练 200,000 步，使用 EMA 0.9999；FID 使用 seed 42、5,000 张 CIFAR-10
+训练集真实图和 TorchMetrics FID-2048。该表是单 seed 的一次测量，不包含随机种子方差。
+
+| Solver | 积分步数 | 实际网络评估/图 | FID |
+|---|---:|---:|---:|
+| Euler | 4 | 4 | 80.5531 |
+| Euler | 8 | 8 | 43.2211 |
+| Euler | 16 | 16 | 32.1931 |
+| Euler | 32 | 32 | 28.0684 |
+| Euler | 50 | 50 | 26.7610 |
+| Heun | 4 | 8 | 154.8813 |
+| Heun | 8 | 16 | 82.1227 |
+| Heun | 16 | 32 | 43.2588 |
+| Heun | 32 | 64 | 26.4840 |
+| Heun | 50 | 100 | 24.0062 |
+
+Project 1 R5 + DDIM 基线在 NFE 10/20/50/100/250 的 FID 为 53.0907/33.6099/23.1206/
+20.1105/18.3625。FM Euler 在 NFE 8 优于 DDIM NFE 10；NFE 16 对 NFE 20 只有小幅优势。
+在更高预算下 DDIM 更好；因此本次数据支持 FM 的低步数优势，不支持其在整个 NFE 区间
+全面领先。Heun 在 64 次评估达到 FID 26.4840，只略好于 Euler 的 50 次评估，粗步数时
+误差很大。对比曲线见 [`results/nfe_fid_curve_v2.png`](results/nfe_fid_curve_v2.png)。
+
+固定 Euler 20 个积分步（CFG 每图实际进行 40 次网络评估）的 guidance 扫描：
+
+| CFG scale | FID |
+|---:|---:|
+| 1.0 | 23.5773 |
+| 2.0 | **18.8105** |
+| 3.0 | 23.6983 |
+| 5.0 | 35.2425 |
+| 7.5 | 44.9110 |
+
+本次最佳 scale 为 2.0；更强 guidance 从 3.0 起使 FID 变差。完整评测 JSON、checkpoint
+哈希、训练 CSV、训练与评测日志、类别样本网格和无条件样图均已归档在 `results/`、
+`logs/`、`samples/`，推理权重随 `project4-v2.0` GitHub Release 发布。
 
 ### AutoDL 实时监控
 
@@ -264,7 +322,7 @@ python train.py --config configs/cifar10_fm_debug.yaml --output checkpoints/debu
 python sample.py --model checkpoints/debug/latest.pt --nfe 8 --cfg 0 3
 #    出图会很糊，只看「有没有跑通」，不看质量
 
-# 1. 正式训练（12-24h on RTX 4090）
+# 1. 正式训练（旧版教学估算：RTX 4090 上 12-24h；v2 在 AutoDL RTX 4080 SUPER 上的实测时间见上文）
 python train.py --config configs/cifar10_fm.yaml --output checkpoints/fm
 
 # 2. 出样本网格图
@@ -314,13 +372,16 @@ Project 2 的 `benchmark.py` 已经在同一数据集上量过 FID-NFE 曲线—
 >
 > **评分看的是趋势不是绝对值**：你的 FM 曲线在低 NFE 区间是否显著优于 DDPM、
 > 曲线在多少 NFE 之后开始变平。别为了追这张表里的数去反复重训。
+>
+> **本仓库 v2 的实测结论**：低 NFE 下 FM Euler 有优势，但高 NFE 下 Project 1 DDIM 更好；
+> 结果详见上方“v2 本次实测结果”。因此这张论文级预期表不能当成本项目的实际结果或保证趋势。
 
 ---
 
 ## 训练资源
 
 - 单 GPU (V100 / A100 / RTX 4090) 即可
-- 训练时间：DiT-S 200K steps 约 12-24 小时（RTX 4090）；换小 UNet 会快不少
+- 旧版估算：DiT-S 200K steps 约 12-24 小时（RTX 4090）。v2 在 AutoDL RTX 4080 SUPER 上实测 FM-U 为 4.83 小时、FM-C checkpoint 记录 4.36 小时；FM-C 曾恢复训练，细节见上文。
 - 推荐 model：DiT-S（`configs/cifar10_fm.yaml`，~33M）或 UNet（~30M）
 - 显存不够就调小 `train.batch_size`，同时把 `train.lr` 按比例调小
 - **先跑 `cifar10_fm_debug.yaml`**（500 步、10 分钟）确认流水线通了再开长训练
