@@ -3,7 +3,7 @@
   "status": "implementation prepared; AutoDL training and evaluation pending",
   "repository": "https://github.com/li-cheng111/my-diffusion-models-starter",
   "planned_release_tag": "project4-v2.0",
-  "hardware": "AutoDL NVIDIA GeForce RTX 4080 SUPER 16GB",
+  "hardware": "AutoDL NVIDIA GeForce RTX 4080 SUPER; nvidia-smi reports 32760 MiB",
   "software": "Python 3.12.3, PyTorch 2.8.0+cu128, TorchVision 0.23.0+cu128",
   "dataset": "CIFAR-10 train split",
   "model": "DiT-S, 32.62M parameters, continuous time embedding scale 1000",

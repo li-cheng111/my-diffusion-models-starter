@@ -92,7 +92,7 @@ cosine 学习率衰减。50K 间隔保留可交付 checkpoint，10K 间隔原子
 续训恢复模型、optimizer、scheduler 和随机数生成器状态。每 100 steps 将 loss、LR、
 速度与累计耗时写入 `train_log.csv`。
 
-AutoDL 单卡 RTX 4080 SUPER（16GB）运行时，从仓库根目录执行：
+AutoDL 单卡 RTX 4080 SUPER（实例报告 32,760 MiB 显存）运行时，从仓库根目录执行：
 
 ```bash
 pip install -r requirements/project4.txt
