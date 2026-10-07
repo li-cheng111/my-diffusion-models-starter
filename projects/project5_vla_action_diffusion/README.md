@@ -132,6 +132,27 @@ ssh -N -L 18765:127.0.0.1:18765 root@<autodl-host> -p <ssh-port>
 然后打开 `http://127.0.0.1:18765/`。页面每 2 秒读取训练状态、loss、GPU、评估
 结果和 rollout 图片；页面本身没有训练控制接口。
 
+### 严格控制变量的复现实验
+
+`run_fair_experiments.py` 用同一个 4×4 spatial CNN、专家数据和测试 episodes
+重跑算法与 chunk 消融。默认使用 cosine noise schedule、padding mask、训练 seed
+42，并在每次评估中固定环境与策略采样噪声。评估报告会给出 100 个 episode 的
+Wilson 95% 区间；单个训练 seed 无法估计训练随机性的方差：
+
+```bash
+# 先做 20-step smoke test
+python run_fair_experiments.py --preset algorithms --seed 42 \
+  --episodes 5 --steps 20 --run-root runs/fair_smoke
+
+# 完整 10 条件 × 1 seed 矩阵，可断点继续
+python -u monitor_dashboard.py --run-root runs/project5_fair \
+  --total-runs 10 --port 18765
+bash launch_after_gpu_idle.sh
+```
+
+矩阵和验收规则见 `FAIR_EXPERIMENT_PLAN.md`。汇总会持续写入
+`runs/project5_fair/fair_summary.json` 和 `fair_ablation.md`。
+
 ---
 
 ## 任务流

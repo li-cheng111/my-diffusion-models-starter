@@ -59,22 +59,37 @@ class Monitor:
         self.total_runs = total_runs
 
     def snapshot(self):
-        runs = [p for p in self.root.iterdir() if p.is_dir()] if self.root.exists() else []
+        # Fair reruns are grouped as <condition>/seed_<n>. Discover actual run
+        # directories by their status file while retaining compatibility with
+        # the original one-level layout.
+        runs = ([path.parent for path in self.root.rglob("status.json")
+                 if "_queue" not in path.parts]
+                if self.root.exists() else [])
         statuses = [(p, _read_json(p / "status.json")) for p in runs]
         active = [(p, s) for p, s in statuses if s.get("state") == "running"]
         current_path, current = (active[-1] if active else max(statuses, key=lambda x: x[0].stat().st_mtime, default=(None, {})))
+        queue_path = self.root / "_queue" / "status.json"
+        queue_status = _read_json(queue_path)
+        if not active and queue_status.get("state") in {"waiting_gpu", "starting"}:
+            current_path, current = queue_path.parent, queue_status
         results = []
         for p in runs:
             for path in p.glob("eval*.json"):
                 payload = _read_json(path)
                 if payload:
-                    results.append({"name": p.name + "/" + path.stem, **payload})
+                    name = p.relative_to(self.root).as_posix() + "/" + path.stem
+                    results.append({"name": name, **payload})
         done = sum(1 for _, s in statuses if s.get("state") == "completed")
         total = self.total_runs or max(len(runs), 1)
+        detail = f"{len(runs)} 个运行目录，{done} 个已完成"
+        if queue_status.get("state") == "waiting_gpu":
+            detail = queue_status.get("message", detail)
         progress = {"done": done, "total": total, "percent": round(100 * done / total),
-                    "detail": f"{len(runs)} 个运行目录，{done} 个已完成"}
+                    "detail": detail}
         return {"host": os.environ.get("HOSTNAME", os.environ.get("COMPUTERNAME", "AutoDL")),
-                "root": str(self.root), "status": {"run": current_path.name if current_path else "—", **current},
+                "root": str(self.root),
+                "status": {"run": current_path.relative_to(self.root).as_posix()
+                           if current_path else "—", **current},
                 "progress": progress, "gpu": _gpu_info(),
                 "metrics": _metrics(current_path / "metrics.jsonl") if current_path else [],
                 "results": results}

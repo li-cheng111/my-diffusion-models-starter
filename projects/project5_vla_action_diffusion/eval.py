@@ -17,16 +17,23 @@ from obs_utils import state_dim_for, state_from_obs
 from train import DDPMScheduler, load_config
 
 
+def make_ddim_timesteps(T, n_steps):
+    """Return descending, endpoint-inclusive DDIM indices."""
+    if T < 1 or n_steps < 1:
+        raise ValueError("T and n_steps must be positive")
+    count = min(T, n_steps)
+    return torch.linspace(T - 1, 0, count).round().long().unique_consecutive().tolist()
+
+
 @torch.no_grad()
-def ddpm_sample_action(model, scheduler, image, state, horizon=32, action_dim=2,
-                       n_steps=20, device="cuda"):
-    """DDPM ancestral sampling for action chunk."""
+def ddim_sample_action(model, scheduler, image, state, horizon=32, action_dim=2,
+                       n_steps=20, device="cuda", generator=None):
+    """Deterministic DDIM (eta=0) sampling for a DDPM-trained action model."""
     model.eval()
     B = image.shape[0]
-    a = torch.randn(B, horizon, action_dim, device=device)
+    a = torch.randn(B, horizon, action_dim, device=device, generator=generator)
     T = scheduler.T
-    step = T // n_steps
-    timesteps = list(range(0, T, step))[::-1]
+    timesteps = make_ddim_timesteps(T, n_steps)
     for i, ti in enumerate(timesteps):
         t_tensor = torch.full((B,), ti, device=device, dtype=torch.long)
         eps_pred = model(a, t_tensor, image=image, state=state)
@@ -44,12 +51,19 @@ def ddpm_sample_action(model, scheduler, image, state, horizon=32, action_dim=2,
     return a  # (B, H, A)
 
 
+# Backward-compatible import name used by earlier tests/scripts. The sampler
+# has always been deterministic; the explicit DDIM name avoids misreporting it
+# as ancestral DDPM sampling in new experiments.
+ddpm_sample_action = ddim_sample_action
+
+
 @torch.no_grad()
 def fm_sample_action(model, image, state, horizon=32, action_dim=2,
-                     n_steps=10, device="cuda"):
+                     n_steps=10, device="cuda", generator=None):
     """Euler integration of the action flow from noise to data."""
     model.eval()
-    a = torch.randn(image.shape[0], horizon, action_dim, device=device)
+    a = torch.randn(image.shape[0], horizon, action_dim, device=device,
+                    generator=generator)
     n_steps = max(1, n_steps)
     dt = 1.0 / n_steps
     for i in range(n_steps):
@@ -137,19 +151,25 @@ def evaluate(model, scheduler, cfg, device, n_episodes=100, exec_steps=10,
         rollout_dir.mkdir(parents=True, exist_ok=True)
 
     for ep in range(n_episodes):
+        episode_seed = seed_start + ep
         env = Reach2DEnv(
             n_distractors=n_dist,
-            seed=seed_start + ep,
+            seed=episode_seed,
             target_choices=cfg.get("target_choices"),
             moving_distractors=cfg.get("moving_distractors", False),
             distractor_speed=cfg.get("distractor_speed", 0.025),
         )
+        # Reach2DEnv initializes itself for interactive use. Reset with the
+        # same explicit seed so evaluation has exactly one reproducible initial
+        # state per episode rather than consuming the RNG stream twice.
+        obs = env.reset(seed=episode_seed)
         mode = None
         if cfg.get("target_choices") is not None:
             choices = np.asarray(cfg["target_choices"], dtype=np.float32)
             mode = int(np.argmin(np.linalg.norm(choices - env.target_pos, axis=1)))
             mode_counts[mode] = mode_counts.get(mode, 0) + 1
-        obs = env.reset()
+        generator = torch.Generator(device=device)
+        generator.manual_seed(episode_seed)
         positions = [obs["state"].copy()]
         action_chunk = None
         info = {"success": False, "collision": False, "dist_to_target": float("inf"),
@@ -162,16 +182,16 @@ def evaluate(model, scheduler, cfg, device, n_episodes=100, exec_steps=10,
                 if method == "fm":
                     action_chunk = fm_sample_action(
                         model, image, state, horizon=chunk_size,
-                        n_steps=n_sample_steps, device=device,
+                        n_steps=n_sample_steps, device=device, generator=generator,
                     )[0].cpu().numpy()
                 elif method == "bc":
                     action_chunk = bc_sample_action(
                         model, image, state, horizon=chunk_size, device=device,
                     )[0].cpu().numpy()
                 else:
-                    action_chunk = ddpm_sample_action(
+                    action_chunk = ddim_sample_action(
                         model, scheduler, image, state, horizon=chunk_size,
-                        n_steps=n_sample_steps, device=device,
+                        n_steps=n_sample_steps, device=device, generator=generator,
                     )[0].cpu().numpy()
             obs, _, done, info = env.step(action_chunk[step % exec_steps])
             positions.append(obs["state"].copy())
@@ -281,7 +301,10 @@ def main():
     method = args.method or ckpt.get("method", "ddpm")
     print(f"Loaded {'EMA' if use_ema else 'main'} model from {args.ckpt} ({method})")
 
-    scheduler = DDPMScheduler(T=cfg["diffusion_steps"], device=device)
+    scheduler = DDPMScheduler(
+        T=cfg["diffusion_steps"], device=device,
+        schedule=cfg.get("noise_schedule", "linear"),
+    )
 
     status_path = Path(args.output).parent / "status.json" if args.output else None
     if status_path:

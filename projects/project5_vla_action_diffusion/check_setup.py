@@ -94,7 +94,7 @@ def check_demos():
         return False
 
     n_zero = sum(1 for d in data if np.abs(d["action_chunk"]).max() < 1e-6)
-    keys_ok = {"image", "state", "goal", "action_chunk"} <= set(data[0])
+    keys_ok = {"image", "state", "goal", "action_chunk", "action_mask"} <= set(data[0])
     if not keys_ok:
         print(f"   ❌ 样本缺字段：{sorted(data[0])}")
         return False
@@ -102,7 +102,14 @@ def check_demos():
         print(f"   ❌ {n_zero}/{len(data)} 个 action chunk 全是零 —— "
               f"padding 用了零填充，policy 会学成不动")
         return False
-    print(f"   ✅ {len(data)} 个样本，字段齐全，无全零 chunk")
+    masks_ok = all(d["action_mask"].shape == (16,)
+                   and set(np.unique(d["action_mask"])) <= {0.0, 1.0}
+                   for d in data)
+    has_padding = any((d["action_mask"] == 0).any() for d in data)
+    if not masks_ok or not has_padding:
+        print("   ❌ action_mask 无效或没有标出尾部 padding")
+        return False
+    print(f"   ✅ {len(data)} 个样本，action/action_mask 齐全，无全零 chunk")
     return True
 
 
@@ -161,14 +168,17 @@ def check_todos(model, cfg_path):
 
     cfg = load_config(cfg_path)
     use_vision = cfg["use_vision"]
-    sched = DDPMScheduler(T=cfg["diffusion_steps"], device="cpu")
+    sched = DDPMScheduler(T=cfg["diffusion_steps"], device="cpu",
+                          schedule=cfg.get("noise_schedule", "linear"))
     H = cfg["chunk_size"]
     batch = {"image": torch.randn(2, 3, 64, 64), "state": torch.randn(2, 2),
-             "goal": torch.randn(2, 2), "action": torch.randn(2, H, 2)}
+             "goal": torch.randn(2, 2), "action": torch.randn(2, H, 2),
+             "action_mask": torch.ones(2, H)}
 
     checks = [
         ("TODO 19 (diffusion_loss)",
-         lambda: diffusion_loss(model, batch, sched, "cpu", use_vision)),
+         lambda: diffusion_loss(model, batch, sched, "cpu", use_vision,
+                                cfg.get("mask_padding", False))),
         ("TODO 21 (evaluate)",
          lambda: evaluate(model, sched, cfg, "cpu", n_episodes=2,
                           exec_steps=4, chunk_size=H, n_sample_steps=4)),

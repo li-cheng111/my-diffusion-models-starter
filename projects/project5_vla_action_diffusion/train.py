@@ -3,6 +3,7 @@ Project 5 training script. Contains: TODO 19 (action chunk DDPM loss)
 """
 import argparse
 import json
+import math
 import os
 import random
 import time
@@ -10,7 +11,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
+import numpy as np
 import yaml
 from torch.utils.data import DataLoader
 
@@ -26,6 +27,7 @@ def load_config(path):
 
 def set_seed(seed):
     random.seed(seed)
+    np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
@@ -43,10 +45,26 @@ def write_json(path, payload):
 # DDPM utility
 # -----------------------------------------------------------------------------
 class DDPMScheduler:
-    def __init__(self, T=100, beta_min=1e-4, beta_max=0.02, device="cpu"):
+    def __init__(self, T=100, beta_min=1e-4, beta_max=0.02, device="cpu",
+                 schedule="linear"):
         self.T = T
-        betas = torch.linspace(beta_min, beta_max, T, device=device)
+        self.schedule = schedule
+        if schedule == "linear":
+            betas = torch.linspace(beta_min, beta_max, T, device=device)
+        elif schedule == "cosine":
+            # Improved DDPM cosine schedule. Unlike the starter linear
+            # schedule at T=100, this reaches an almost pure-noise endpoint,
+            # matching inference that starts from N(0, I).
+            s = 0.008
+            steps = torch.linspace(0, T, T + 1, device=device, dtype=torch.float64)
+            alpha_bar = torch.cos(((steps / T + s) / (1 + s)) * math.pi / 2).square()
+            alpha_bar = alpha_bar / alpha_bar[0]
+            betas = (1 - alpha_bar[1:] / alpha_bar[:-1]).clamp(1e-8, 0.999).float()
+        else:
+            raise ValueError(f"Unknown noise schedule: {schedule}")
         alphas = 1 - betas
+        self.betas = betas
+        self.alphas = alphas
         self.alpha_cum = alphas.cumprod(0)
         self.sqrt_ac = self.alpha_cum.sqrt()
         self.sqrt_1mac = (1 - self.alpha_cum).sqrt()
@@ -63,7 +81,16 @@ class DDPMScheduler:
 # -----------------------------------------------------------------------------
 # TODO 19: Implement action chunk DDPM loss
 # -----------------------------------------------------------------------------
-def diffusion_loss(model, batch, scheduler, device, use_vision=True):
+def _masked_mse(prediction, target, batch, mask_padding=False):
+    error = (prediction - target).square()
+    if not mask_padding or "action_mask" not in batch:
+        return error.mean()
+    mask = batch["action_mask"].to(error.device, dtype=error.dtype).unsqueeze(-1)
+    return (error * mask).sum() / (mask.sum() * error.shape[-1]).clamp_min(1.0)
+
+
+def diffusion_loss(model, batch, scheduler, device, use_vision=True,
+                   mask_padding=False):
     """
     Compute DDPM noise prediction loss on action chunks.
 
@@ -98,13 +125,13 @@ def diffusion_loss(model, batch, scheduler, device, use_vision=True):
     noise = torch.randn_like(action)
     noisy_action = scheduler.add_noise(action, t, noise)
     eps_pred = model(noisy_action, t, image=image, state=state)
-    return F.mse_loss(eps_pred, noise)
+    return _masked_mse(eps_pred, noise, batch, mask_padding)
     # ============================================================
     # END TODO 19
     # ============================================================
 
 
-def flow_matching_loss(model, batch, device, use_vision=True):
+def flow_matching_loss(model, batch, device, use_vision=True, mask_padding=False):
     """Conditional Flow Matching loss for the optional FM action head."""
     image = batch["image"].to(device)
     state = state_from_batch(batch, use_vision).to(device)
@@ -114,10 +141,10 @@ def flow_matching_loss(model, batch, device, use_vision=True):
     view = t.view(-1, *([1] * (action.ndim - 1)))
     noisy_action = (1.0 - view) * noise + view * action
     velocity_pred = model(noisy_action, t, image=image, state=state)
-    return F.mse_loss(velocity_pred, action - noise)
+    return _masked_mse(velocity_pred, action - noise, batch, mask_padding)
 
 
-def behavior_cloning_loss(model, batch, device, use_vision=True):
+def behavior_cloning_loss(model, batch, device, use_vision=True, mask_padding=False):
     """Deterministic action-chunk baseline with the same condition encoder."""
     image = batch["image"].to(device)
     state = state_from_batch(batch, use_vision).to(device)
@@ -125,7 +152,7 @@ def behavior_cloning_loss(model, batch, device, use_vision=True):
     zeros = torch.zeros_like(action)
     t = torch.zeros(action.shape[0], device=device, dtype=torch.long)
     action_pred = model(zeros, t, image=image, state=state)
-    return F.mse_loss(action_pred, action)
+    return _masked_mse(action_pred, action, batch, mask_padding)
 
 
 # -----------------------------------------------------------------------------
@@ -135,6 +162,11 @@ def behavior_cloning_loss(model, batch, device, use_vision=True):
 def ema_update(ema_model, model, decay=0.999):
     for p_ema, p in zip(ema_model.parameters(), model.parameters()):
         p_ema.data.mul_(decay).add_(p.data, alpha=1 - decay)
+    # BatchNorm running statistics and counters are buffers, not parameters.
+    # Keeping their initial values made EMA evaluation invalid for ResNet18.
+    model_buffers = dict(model.named_buffers())
+    for name, buffer_ema in ema_model.named_buffers():
+        buffer_ema.copy_(model_buffers[name])
 
 
 # -----------------------------------------------------------------------------
@@ -173,7 +205,7 @@ def main():
             chunk_size=cfg["chunk_size"],
             n_distractors=cfg["n_distractors"],
             save_path=demo_path,
-            seed=cfg.get("seed", 0),
+            seed=cfg.get("data_seed", cfg.get("seed", 0)),
             target_choices=cfg.get("target_choices"),
         )
 
@@ -206,7 +238,10 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["lr"],
                                   weight_decay=cfg.get("weight_decay", 0.0))
-    scheduler = DDPMScheduler(T=cfg["diffusion_steps"], device=device)
+    scheduler = DDPMScheduler(
+        T=cfg["diffusion_steps"], device=device,
+        schedule=cfg.get("noise_schedule", "linear"),
+    )
     print(f"Params: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
 
     checkpoint = None
@@ -231,12 +266,14 @@ def main():
                              "max_steps": cfg["max_steps"], "step": step})
     while step < cfg["max_steps"]:
         for batch in loader:
+            mask_padding = cfg.get("mask_padding", False)
             if method == "fm":
-                loss = flow_matching_loss(model, batch, device, use_vision)
+                loss = flow_matching_loss(model, batch, device, use_vision, mask_padding)
             elif method == "bc":
-                loss = behavior_cloning_loss(model, batch, device, use_vision)
+                loss = behavior_cloning_loss(model, batch, device, use_vision, mask_padding)
             else:
-                loss = diffusion_loss(model, batch, scheduler, device, use_vision)
+                loss = diffusion_loss(model, batch, scheduler, device, use_vision,
+                                      mask_padding)
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

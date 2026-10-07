@@ -1,0 +1,24 @@
+# Controlled-comparison base config. run_fair_experiments.py writes one
+# resolved config per method/horizon/seed so every run is self-contained.
+n_demos: 1000
+n_distractors: 2
+chunk_size: 16
+demo_path: ./data/fair_demos_h16.pkl
+seed: 42
+data_seed: 0
+use_vision: true
+vision_encoder: small
+vision_out_dim: 128
+hidden: 256
+diffusion_steps: 100
+noise_schedule: cosine
+mask_padding: true
+batch_size: 256
+lr: 1.0e-3
+weight_decay: 0.0
+ema_decay: 0.999
+max_steps: 10000
+log_every: 200
+save_every: 2000
+ckpt_dir: ./runs/project5_fair/placeholder/ckpts
+num_workers: 2

@@ -30,6 +30,7 @@ def collect_demos(n_demos=1000, chunk_size=32, n_distractors=2, save_path=None,
         L = len(obs_list)
         for start in range(L):
             end = start + chunk_size
+            action_mask = np.ones((chunk_size,), dtype=np.float32)
             if end > L:
                 # 末尾不足一个 chunk：**重复最后一个 action** 补齐。
                 #
@@ -42,6 +43,7 @@ def collect_demos(n_demos=1000, chunk_size=32, n_distractors=2, save_path=None,
                 valid = np.array(act_list[start:L], dtype=np.float32)
                 actions[: L - start] = valid
                 actions[L - start:] = valid[-1]
+                action_mask[L - start:] = 0.0
             else:
                 actions = np.array(act_list[start:end], dtype=np.float32)
             data.append({
@@ -49,6 +51,7 @@ def collect_demos(n_demos=1000, chunk_size=32, n_distractors=2, save_path=None,
                 "state": obs_list[start]["state"],
                 "goal": obs_list[start]["goal"],
                 "action_chunk": actions,
+                "action_mask": action_mask,
             })
         n_success += 1
         if n_success >= n_demos:
@@ -78,7 +81,14 @@ class DemoDataset(Dataset):
         goal = torch.from_numpy(d["goal"])
         # action_chunk: (H, 2) float32
         action = torch.from_numpy(d["action_chunk"])
-        return {"image": img, "state": state, "goal": goal, "action": action}
+        # Older demo pickles do not contain masks. Treat them as fully valid so
+        # legacy checkpoints remain reproducible; fair experiments recollect
+        # their data and therefore always use the true valid-action mask.
+        action_mask = torch.from_numpy(
+            d.get("action_mask", np.ones((action.shape[0],), dtype=np.float32))
+        ).float()
+        return {"image": img, "state": state, "goal": goal,
+                "action": action, "action_mask": action_mask}
 
 
 if __name__ == "__main__":

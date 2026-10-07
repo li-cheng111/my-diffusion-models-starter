@@ -192,7 +192,12 @@ class DiffusionPolicy(nn.Module):
         a_flat = action_noisy.reshape(B, -1)
 
         # Time embedding
-        t_emb = timestep_embedding(t, self.time_emb_dim)
+        # DDPM passes integer indices in [0, T). Flow Matching passes
+        # continuous time in [0, 1]; scale the latter so the sinusoidal
+        # embedding covers a useful frequency range instead of staying almost
+        # constant throughout the path.
+        embed_t = t * 1000.0 if t.dtype.is_floating_point else t
+        t_emb = timestep_embedding(embed_t, self.time_emb_dim)
         t_emb = self.time_proj(t_emb)
 
         # State embedding
