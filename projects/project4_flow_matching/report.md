@@ -1,5 +1,10 @@
 # Project 4：CIFAR-10 Flow Matching 实验报告
 
+> **历史结果说明**：以下数字来自 Project4 v1 的 RTX 4090 训练。旧采样脚本把
+> `CFG=0` 作为“无 guidance”，但仍输入类别 0，因此这些数字实际是类别条件生成，
+> 不能作为无条件 FM 与 Project 1 的公平对照。代码和评测协议现已更新为 v2；新的
+> AutoDL 4080 SUPER 结果、运行时间及 R5 对照曲线将在训练和统一评测完成后替换本节。
+
 ## 1. 实验目标与环境
 
 本项目在 CIFAR-10 训练集上实现 Conditional Flow Matching（Rectified Flow），并用同一份真实样本、同一套 TorchMetrics FID 配置比较 Flow Matching（FM）和 Project 2 的 DDPM + DDIM 基线。核心交付物是 TODO 16 的训练损失、TODO 17 的 Euler ODE 采样、TODO 18 的 velocity-space CFG，以及不同 NFE 下的 FID 曲线。

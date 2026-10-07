@@ -84,6 +84,7 @@ class SimpleDiT(nn.Module):
         depth=12,
         num_heads=6,
         num_classes=10,  # 真实类别数；null token 用索引 num_classes（与 ConditionalUNet 一致）
+        time_scale=1.0,
     ):
         super().__init__()
         self.img_size = img_size
@@ -91,6 +92,7 @@ class SimpleDiT(nn.Module):
         self.in_ch = in_ch
         self.embed_dim = embed_dim
         self.num_classes = num_classes
+        self.time_scale = float(time_scale)
 
         self.patch_embed = PatchEmbed(img_size, patch_size, in_ch, embed_dim)
         num_patches = self.patch_embed.num_patches
@@ -134,7 +136,7 @@ class SimpleDiT(nn.Module):
         """
         tokens = self.patch_embed(x) + self.pos_embed  # (B, N, D)
         # Condition embedding: time + label
-        t_emb = timestep_embedding(t, self.embed_dim)
+        t_emb = timestep_embedding(t * self.time_scale, self.embed_dim)
         c = self.t_proj(t_emb) + self.y_emb(y)
         for block in self.blocks:
             tokens = block(tokens, c)

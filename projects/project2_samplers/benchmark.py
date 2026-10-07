@@ -206,6 +206,8 @@ def main() -> int:
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seeds", nargs="+", type=int, default=None,
+                        help="Repeat each benchmark point for these seeds")
     parser.add_argument("--eta", type=float, default=0.0)
     parser.add_argument("--ddim_timestep_strategy", default="linear")
     parser.add_argument("--dpm_timestep_strategy", default="lambda")
@@ -215,6 +217,10 @@ def main() -> int:
     parser.add_argument("--data_root", default="./data")
     parser.add_argument("--project1_path", default=None)
     parser.add_argument("--raw_weights", action="store_true")
+    parser.add_argument("--ema_decay", type=float, default=None,
+                        help="Select a decay from multi-EMA checkpoints")
+    parser.add_argument("--no_clip_denoised", action="store_true",
+                        help="Disable x0 clipping for samplers that support it")
     args = parser.parse_args()
     if args.num_samples < 2:
         parser.error("--num_samples must be at least 2 for FID")
@@ -230,7 +236,9 @@ def main() -> int:
     config = checkpoint["config"]
     model = UNet(**config["model"]).to(device)
     schedule = DDPMSchedule(**config["diffusion"]).to(device)
-    weight_type = load_model_weights(model, checkpoint, use_ema=not args.raw_weights)
+    weight_type = load_model_weights(
+        model, checkpoint, use_ema=not args.raw_weights, ema_decay=args.ema_decay
+    )
     model.eval()
 
     full_real_dataset = get_dataset(
@@ -255,12 +263,14 @@ def main() -> int:
 
     results: list[dict] = []
     matrix = experiment_matrix(args, schedule)
-    for sampler_name, step_values in matrix.items():
+    seeds = args.seeds or [args.seed]
+    for seed in seeds:
+      for sampler_name, step_values in matrix.items():
         for num_steps in step_values:
             if sampler_name == "ddpm" and num_steps != schedule.T:
                 print(f"Skipping DDPM steps={num_steps}; DDPM requires T={schedule.T}")
                 continue
-            seed_everything(args.seed)
+            seed_everything(seed)
             timestep_strategy = (
                 args.dpm_timestep_strategy
                 if sampler_name == "dpm-solver"
@@ -273,6 +283,7 @@ def main() -> int:
                 device=device,
                 eta=args.eta,
                 timestep_strategy=timestep_strategy,
+                clip_denoised=not args.no_clip_denoised,
             )
             nfe = sampler.nfe_for_steps(num_steps)
             print(f"\n[benchmark] sampler={sampler_name}, steps={num_steps}, NFE={nfe}")
@@ -286,7 +297,7 @@ def main() -> int:
                 image_shape=image_shape,
                 in_channels=image_shape[0],
                 device=device,
-                seed=args.seed,
+                seed=seed,
             )
             synchronize(device)
             sample_seconds = time.perf_counter() - started
@@ -314,10 +325,12 @@ def main() -> int:
                 "fid": fid,
                 "sample_seconds": sample_seconds,
                 "fid_seconds": fid_seconds,
-                "seed": args.seed,
+                "seed": seed,
                 "num_samples": args.num_samples,
                 "timestep_strategy": timestep_strategy,
                 "eta": args.eta if sampler_name == "ddim" else None,
+                "clip_denoised": not args.no_clip_denoised,
+                "weights": weight_type,
                 "preview": preview_path.as_posix(),
             }
             results.append(result)
@@ -330,6 +343,8 @@ def main() -> int:
             "checkpoint_sha256": sha256_file(checkpoint_path),
             "git_commit": repository_commit(),
             "weights": weight_type,
+            "ema_decay": args.ema_decay,
+            "clip_denoised": not args.no_clip_denoised,
             "dataset": config["dataset"]["name"],
             "real_split": "train",
             "real_indices": f"0:{args.num_samples}",

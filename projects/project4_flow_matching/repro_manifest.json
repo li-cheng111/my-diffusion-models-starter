@@ -1,14 +1,14 @@
 {
-  "project": "Project4 Flow Matching",
-  "code_commit": "see the release tag target commit",
+  "project": "Project4 Flow Matching v1 historical checkpoint",
+  "code_commit": "see the project4-v1.0 release tag",
   "release_tag": "project4-v1.0",
   "asset": "project4-fm-dit-s-step200000.pt",
   "asset_role": "Final DiT-S EMA checkpoint after 200000 training steps",
   "sha256": "7191f6b9209f5e4e016006a76407136616b8ded91957f7fc916ff304442368cf",
   "source_environment": "AutoDL RTX 4090, Ubuntu 22.04, Python 3.12.3, PyTorch 2.8.0+cu128",
   "data": "CIFAR-10 train split; download automatically to .local/datasets",
-  "download": "gh release download project4-v1.0 --repo li-cheng111/diffusion-models-starter --pattern project4-fm-dit-s-step200000.pt --dir .local/checkpoints/project4/fm",
+  "download": "gh release download project4-v1.0 --repo li-cheng111/my-diffusion-models-starter --pattern project4-fm-dit-s-step200000.pt --dir .local/checkpoints/project4/fm",
   "verify": "sha256sum -c projects/project4_flow_matching/repro_manifest.sha256",
-  "run": "python projects/project4_flow_matching/sample.py --model .local/checkpoints/project4/fm/project4-fm-dit-s-step200000.pt --nfe 4 8 16 32 50 --cfg 0 1 3 7.5",
-  "fid": "python projects/project4_flow_matching/eval_fid.py --model .local/checkpoints/project4/fm/project4-fm-dit-s-step200000.pt --nfe 4 8 16 32 50 --num_samples 5000 --output projects/project4_flow_matching/results/fm_nfe.json"
+  "run": "python projects/project4_flow_matching/sample.py --model .local/checkpoints/project4/fm/project4-fm-dit-s-step200000.pt --nfe 4 8 16 32 50 --condition conditional --class_label 0",
+  "fid": "Historical v1 FID is not a fair unconditional comparison; run the v2 protocol in README.md for comparable Project 1 and Project 4 measurements."
 }

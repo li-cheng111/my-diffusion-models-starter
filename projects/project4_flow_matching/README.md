@@ -7,6 +7,11 @@
 用 Rectified Flow / Conditional Flow Matching 训一个 32×32 RGB 图像生成模型，
 对比 DDPM 与 FM 在 NFE-FID 曲线上的差异。
 
+> **v2 复现说明（2026-10）**：本目录现在提供可恢复训练、多档 EMA、Euler/Heun
+> 采样和统一 FID 评测。若要复现新的 Project 4 结果，请使用下方「v2 实施与复现」；
+> 后续旧版示例仅用于课程 TODO 的背景说明。v1 的旧 FID 表是历史数据，不能当作
+> 与 Project 1 R5 基线已严格对齐的 v2 对照结果。
+
 ## 配套教材
 
 讲义、公式推导、论文导读在教材库，开始前请确认已 clone：
@@ -69,7 +74,107 @@ python check_setup.py
 ```
 
 它会核对 config 的键、按 config 构建模型跑一次前向（包括把 CFG 的 null token
-喂进 embedding），并报告 TODO 16/17/18 的状态。TODO 显示 `⏳ 未完成` 是预期的。
+喂进 embedding），并验证 TODO 16/17/18 的 loss 和采样输出。
+
+## v2 实施与复现
+
+v2 将 Project 4 拆成两个 200K-step 训练配置，避免把类别条件模型的 CFG=0
+误称为无条件模型，并可以直接和 Project 1 的无条件 DDPM 比较：
+
+| 实验 | 配置 | 用途 |
+|------|------|------|
+| FM-U | `configs/cifar10_fm_v2_unconditional.yaml` | 每张训练图都用 null 类别 token；与 Project 1 对照 |
+| FM-C | `configs/cifar10_fm_v2_conditional.yaml` | 类别条件 + 10% 条件 dropout；评估条件生成与 CFG |
+
+两者均使用 DiT-S（32.62M 参数）、时间嵌入尺度 1000、batch 64、BF16、200K
+optimizer steps、seed 42、EMA 0.999/0.9995/0.9999、2K warmup，并在后半程做
+cosine 学习率衰减。50K 间隔保留可交付 checkpoint，10K 间隔原子更新 `latest.pt`；
+续训恢复模型、optimizer、scheduler 和随机数生成器状态。每 100 steps 将 loss、LR、
+速度与累计耗时写入 `train_log.csv`。
+
+AutoDL 单卡 RTX 4080 SUPER（16GB）运行时，从仓库根目录执行：
+
+```bash
+pip install -r requirements/project4.txt
+python projects/project4_flow_matching/train.py \
+  --config projects/project4_flow_matching/configs/cifar10_fm_v2_unconditional.yaml \
+  --output /root/autodl-tmp/runs/fm_v2_unconditional --seed 42 --precision bf16
+python projects/project4_flow_matching/train.py \
+  --config projects/project4_flow_matching/configs/cifar10_fm_v2_conditional.yaml \
+  --output /root/autodl-tmp/runs/fm_v2_conditional --seed 42 --precision bf16
+```
+
+若进程中断，用同一条命令并追加 `--resume /root/autodl-tmp/runs/<实验>/latest.pt`。
+从已有日志估计，4080 SUPER 上每个 200K 训练预计约 8–14 小时；先测短跑吞吐，
+再以仪表盘显示的速度动态给出准确 ETA。CIFAR-10 首次下载通常需要几分钟到十几分钟，
+取决于 AutoDL 到数据源的带宽。checkpoint 和数据保存在数据盘，不进入 Git。
+
+### Project 1 对照与一致评测
+
+先下载已归档的 Project 1 R5 checkpoint，并校验 SHA256：
+
+```bash
+mkdir -p /root/autodl-tmp/checkpoints
+wget -O /root/autodl-tmp/checkpoints/p1-r5.pt \
+  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/challenge-v1/r5_uniform_late_decay_final.pt
+echo '88eff8c3db7a2c9350d740247755f1d22abea3de0073b2b504b4b77c2ab412bb  /root/autodl-tmp/checkpoints/p1-r5.pt' | sha256sum -c -
+```
+
+固定 CIFAR-10 train 前 5000 张真实图、TorchMetrics FID-2048、EMA 0.9999、
+seed 42 和同一份项目依赖，测 Project 1 DDIM 基线：
+
+```bash
+python -m projects.project2_samplers.benchmark \
+  --ckpt /root/autodl-tmp/checkpoints/p1-r5.pt --sampler ddim \
+  --steps 10 20 50 100 250 --num_samples 5000 --batch_size 64 --seed 42 \
+  --output projects/project2_samplers/runs/p1_r5_ddim_5k.json \
+  --plot projects/project2_samplers/runs/p1_r5_ddim_5k.png
+```
+
+FM-U 的无条件 Euler 曲线：
+
+```bash
+python projects/project4_flow_matching/eval_fid.py \
+  --model /root/autodl-tmp/runs/fm_v2_unconditional/latest.pt \
+  --condition unconditional --solver euler --nfe 4 8 16 32 50 \
+  --num_samples 5000 --batch_size 64 --seeds 42 \
+  --output projects/project4_flow_matching/results/fm_v2_unconditional_euler.json
+```
+
+为比较积分器，Heun 的步数设为 Euler 的一半，使实际网络前向次数相等，
+例如 Euler 8 步与 Heun 4 步都记为每样本 8 次网络求值。原始 JSON 会同时保存
+积分步数和网络求值数。FM-C 的 CFG 扫描显式使用两种标签预测：
+
+```bash
+python projects/project4_flow_matching/eval_fid.py \
+  --model /root/autodl-tmp/runs/fm_v2_conditional/latest.pt \
+  --condition cfg --solver euler --nfe 20 --cfg 1 2 3 5 7.5 \
+  --num_samples 5000 --batch_size 64 --seeds 42 \
+  --output projects/project4_flow_matching/results/fm_v2_conditional_cfg.json
+```
+
+`--condition unconditional` 始终输入 null token，`conditional` 始终输入平衡的真实类别，
+`cfg` 才执行 $v_u+s(v_c-v_u)$；CFG 每步的网络求值成本是条件或无条件单路的两倍。
+重复种子时用 `--seeds 42 43 44`，报告均值和离散程度，不把单个 seed 说成稳定结论。
+
+### AutoDL 实时监控
+
+训练进度页面只读训练 CSV、GPU 使用率和最近日志，每两秒刷新。实例中启动：
+
+```bash
+mkdir -p /root/autodl-tmp/logs /root/autodl-tmp/runs
+nohup python projects/project4_flow_matching/monitor_dashboard.py \
+  --host 0.0.0.0 --port 6006 > /root/autodl-tmp/logs/dashboard.log 2>&1 &
+nohup python projects/project4_flow_matching/train.py \
+  --config projects/project4_flow_matching/configs/cifar10_fm_v2_unconditional.yaml \
+  --output /root/autodl-tmp/runs/fm_v2_unconditional \
+  --seed 42 --precision bf16 \
+  > /root/autodl-tmp/logs/fm_v2_unconditional.log 2>&1 &
+```
+
+第一组训练结束后，再启动 FM-C（不要同时占用这张卡训练两个模型）。在 AutoDL
+控制台「自定义服务」中打开实例 6006 端口对应的网址，即可在外部浏览器
+查看实时进度。实例被释放后服务地址会失效。
 
 ---
 

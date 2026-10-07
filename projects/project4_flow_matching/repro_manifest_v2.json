@@ -1,0 +1,36 @@
+{
+  "project": "Project 4 Flow Matching v2",
+  "status": "implementation prepared; AutoDL training and evaluation pending",
+  "repository": "https://github.com/li-cheng111/my-diffusion-models-starter",
+  "planned_release_tag": "project4-v2.0",
+  "hardware": "AutoDL NVIDIA GeForce RTX 4080 SUPER 16GB",
+  "software": "Python 3.12.3, PyTorch 2.8.0+cu128, TorchVision 0.23.0+cu128",
+  "dataset": "CIFAR-10 train split",
+  "model": "DiT-S, 32.62M parameters, continuous time embedding scale 1000",
+  "training": {
+    "steps": 200000,
+    "batch_size": 64,
+    "precision": "BF16 autocast",
+    "seed": 42,
+    "ema_decays": [0.999, 0.9995, 0.9999],
+    "warmup_steps": 2000,
+    "cosine_decay_start": 100000,
+    "snapshot_interval": 50000
+  },
+  "runs": {
+    "unconditional": "projects/project4_flow_matching/configs/cifar10_fm_v2_unconditional.yaml (cond_drop_prob=1.0)",
+    "conditional": "projects/project4_flow_matching/configs/cifar10_fm_v2_conditional.yaml (cond_drop_prob=0.1)"
+  },
+  "evaluation": {
+    "fid": "TorchMetrics FrechetInceptionDistance(feature=2048, normalize=False)",
+    "real_images": "CIFAR-10 train indices [0:5000]",
+    "sample_count": 5000,
+    "batch_size": 64,
+    "seed": 42,
+    "ema": 0.9999,
+    "solvers": ["Euler", "Heun"],
+    "note": "CFG always uses null and class predictions; reported network evaluations account for its 2x cost."
+  },
+  "checkpoint_assets": "To be populated after training and SHA256 verification",
+  "dashboard": "python projects/project4_flow_matching/monitor_dashboard.py --host 0.0.0.0 --port 6006"
+}
