@@ -223,10 +223,13 @@ python projects/project4_flow_matching/eval_fid.py \
 | Heun | 50 | 100 | 24.0062 |
 
 Project 1 R5 + DDIM 基线在 NFE 10/20/50/100/250 的 FID 为 53.0907/33.6099/23.1206/
-20.1105/18.3625。FM Euler 在 NFE 8 优于 DDIM NFE 10；NFE 16 对 NFE 20 只有小幅优势。
-在更高预算下 DDIM 更好；因此本次数据支持 FM 的低步数优势，不支持其在整个 NFE 区间
-全面领先。Heun 在 64 次评估达到 FID 26.4840，只略好于 Euler 的 50 次评估，粗步数时
-误差很大。对比曲线见 [`results/nfe_fid_curve_v2.png`](results/nfe_fid_curve_v2.png)。
+20.1105/18.3625。FM Euler 在 NFE 8 对 DDIM NFE 10、NFE 16 对 DDIM NFE 20 的两个
+错位比较点 FID 较低；但同 NFE 50 时 DDIM 优于 FM Euler，同 NFE 100 时 DDIM 优于已测
+的 FM Heun。由于低预算点没有对齐、每项仅有一个评测 seed，且模型架构和训练预算不同，
+本次数据不足以支持“FM 在低步数下总体优于 DDIM”，也不能把局部差异归因于采样方法本身。
+Heun 在 NFE 8/16 的 FID 分别为 154.8813/82.1227，在 NFE 64 达到 26.4840，显示结果对
+求解器与积分预算敏感。详细比较与补测建议见 [实验报告](report.md)。对比曲线见
+[`results/nfe_fid_curve_v2.png`](results/nfe_fid_curve_v2.png)。
 
 固定 Euler 20 个积分步（CFG 每图实际进行 40 次网络评估）的 guidance 扫描：
 
@@ -373,8 +376,9 @@ Project 2 的 `benchmark.py` 已经在同一数据集上量过 FID-NFE 曲线—
 > **评分看的是趋势不是绝对值**：你的 FM 曲线在低 NFE 区间是否显著优于 DDPM、
 > 曲线在多少 NFE 之后开始变平。别为了追这张表里的数去反复重训。
 >
-> **本仓库 v2 的实测结论**：低 NFE 下 FM Euler 有优势，但高 NFE 下 Project 1 DDIM 更好；
-> 结果详见上方“v2 本次实测结果”。因此这张论文级预期表不能当成本项目的实际结果或保证趋势。
+> **本仓库 v2 的实测结论**：两个错位的低预算测点中 FM Euler 的 FID 较低，但现有数据
+> 不足以证明 FM 在低步数下总体优于 DDIM；结果详见上方“v2 本次实测结果”。这张论文级
+> 预期表不能当成本项目的实际结果或保证趋势。
 
 ---
 
