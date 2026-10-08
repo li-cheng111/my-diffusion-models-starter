@@ -153,6 +153,17 @@ bash launch_after_gpu_idle.sh
 矩阵和验收规则见 `FAIR_EXPERIMENT_PLAN.md`。汇总会持续写入
 `runs/project5_fair/fair_summary.json` 和 `fair_ablation.md`。
 
+### 最新公平重跑结果
+
+本次单训练种子（42）的 10 个条件均完成 10,000 步训练，并在固定的 100 个
+测试 episode（seed 10000–10099）上评估。H=16 下 BC、FM、DDPM 成功率分别为
+88%、87%、81%；DDPM 的 H=8 为 89%（masked）/91%（unmasked），H=32/64 的超时率
+明显上升。详细区间、失败率与复现输出见
+[`results/fair_seed42/fair_ablation.md`](results/fair_seed42/fair_ablation.md)。
+Wilson 区间反映 episode 抽样误差；单个训练种子不能估计训练随机性，因此这些数字
+不应解读为跨种子显著性结论。本节公平重跑是对照分析的最新结果；上文早期消融属于
+先导实验，实验协议不同，不应与本节数值直接混比。
+
 ---
 
 ## 任务流
