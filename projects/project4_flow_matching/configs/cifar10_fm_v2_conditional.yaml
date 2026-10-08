@@ -1,0 +1,27 @@
+# Project 4 v2 conditional DiT-S. Train with: --precision bf16
+data:
+  root: ./data
+  num_workers: 6
+model:
+  type: dit
+  num_classes: 10
+  embed_dim: 384
+  depth: 12
+  num_heads: 6
+  patch_size: 2
+  # Scale continuous FM time to the range used by sinusoidal timestep features.
+  time_scale: 1000.0
+train:
+  batch_size: 64
+  lr: 2.0e-4
+  weight_decay: 0.0
+  ema_decays: [0.999, 0.9995, 0.9999]
+  grad_clip: 1.0
+  max_steps: 200000
+  cond_drop_prob: 0.1
+  warmup_steps: 2000
+  decay_start_step: 100000
+  min_lr_ratio: 0.1
+  log_every: 100
+  save_every: 10000
+  snapshot_every: 50000

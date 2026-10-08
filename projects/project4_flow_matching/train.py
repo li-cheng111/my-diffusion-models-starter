@@ -3,6 +3,8 @@
 含 TODO 16: 实现 Rectified Flow loss
 """
 import argparse
+import csv
+import json
 import os
 import time
 import random
@@ -45,6 +47,7 @@ def build_model(cfg):
             depth=m['depth'],
             num_heads=m['num_heads'],
             num_classes=m['num_classes'],
+            time_scale=m.get('time_scale', 1.0),
         )
     else:
         raise ValueError(f"未知的 model.type: {m['type']}（只支持 'unet' / 'dit'）")
@@ -98,6 +101,25 @@ def compute_fm_loss(model, x_1, y, cond_drop_prob, num_classes):
     return F.mse_loss(velocity, target)
 
 
+def _lr_lambda(step, train_cfg):
+    warmup = int(train_cfg.get('warmup_steps', 0))
+    decay_start = int(train_cfg.get('decay_start_step', train_cfg['max_steps']))
+    max_steps = int(train_cfg['max_steps'])
+    floor = float(train_cfg.get('min_lr_ratio', 0.1))
+    if warmup and step < warmup:
+        return max(1e-8, (step + 1) / warmup)
+    if step < decay_start:
+        return 1.0
+    progress = min(1.0, max(0.0, (step - decay_start) / max(1, max_steps - decay_start)))
+    return floor + (1.0 - floor) * 0.5 * (1.0 + torch.cos(torch.tensor(progress * torch.pi)).item())
+
+
+def _save_checkpoint(path, checkpoint):
+    temporary = path + '.tmp'
+    torch.save(checkpoint, temporary)
+    os.replace(temporary, path)
+
+
 def train(cfg, output_dir, seed=42, precision='fp32', resume=None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     os.makedirs(output_dir, exist_ok=True)
@@ -116,6 +138,7 @@ def train(cfg, output_dir, seed=42, precision='fp32', resume=None):
         transforms.Normalize([0.5] * 3, [0.5] * 3),  # to [-1, 1]
     ])
     ds = datasets.CIFAR10(cfg['data']['root'], train=True, download=True, transform=tf)
+    data_generator = torch.Generator().manual_seed(seed)
     loader = DataLoader(
         ds,
         batch_size=cfg['train']['batch_size'],
@@ -124,6 +147,7 @@ def train(cfg, output_dir, seed=42, precision='fp32', resume=None):
         drop_last=True,
         pin_memory=(device.type == 'cuda'),
         persistent_workers=(cfg['data']['num_workers'] > 0),
+        generator=data_generator,
     )
 
     model = build_model(cfg).to(device)
@@ -133,13 +157,16 @@ def train(cfg, output_dir, seed=42, precision='fp32', resume=None):
         raise ValueError("precision must be 'fp32' or 'bf16'")
     print(f"device={device} precision={precision} seed={seed}")
 
-    ema = {k: v.clone().detach() for k, v in model.state_dict().items()}
-    ema_decay = cfg['train'].get('ema_decay', 0.9999)
+    ema_decays = cfg['train'].get('ema_decays', [cfg['train'].get('ema_decay', 0.9999)])
+    ema_states = [{k: v.clone().detach() for k, v in model.state_dict().items()}
+                  for _ in ema_decays]
     opt = torch.optim.AdamW(
         model.parameters(),
         lr=cfg['train']['lr'],
         weight_decay=cfg['train']['weight_decay'],
     )
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        opt, lr_lambda=lambda s: _lr_lambda(s, cfg['train']))
 
     step = 0
     losses = []
@@ -147,15 +174,41 @@ def train(cfg, output_dir, seed=42, precision='fp32', resume=None):
         ckpt = torch.load(resume, map_location=device, weights_only=False)
         model.load_state_dict(ckpt['model'])
         if 'ema' in ckpt:
-            ema = {k: v.to(device).clone().detach() for k, v in ckpt['ema'].items()}
+            if isinstance(ckpt['ema'], dict) and 'models' in ckpt['ema']:
+                saved_decays, saved_models = ckpt['ema']['decays'], ckpt['ema']['models']
+                for i, decay in enumerate(ema_decays):
+                    match = next((j for j, old in enumerate(saved_decays)
+                                  if abs(float(old) - float(decay)) < 1e-8), None)
+                    if match is not None:
+                        ema_states[i] = {k: v.to(device).clone().detach()
+                                         for k, v in saved_models[match].items()}
+            else:
+                # Backward compatibility with Project4 v1's single EMA state dict.
+                ema_states = [{k: v.to(device).clone().detach()
+                               for k, v in ckpt['ema'].items()} for _ in ema_decays]
         if 'opt' in ckpt:
             opt.load_state_dict(ckpt['opt'])
         step = int(ckpt.get('step', 0))
+        if 'scheduler' in ckpt:
+            scheduler.load_state_dict(ckpt['scheduler'])
+        if 'rng' in ckpt:
+            rng = ckpt['rng']
+            torch.set_rng_state(rng['torch'].cpu())
+            random.setstate(rng['python'])
+            data_generator.set_state(rng['data_generator'].cpu())
+            if torch.cuda.is_available() and rng.get('cuda') is not None:
+                torch.cuda.set_rng_state_all([state.cpu() for state in rng['cuda']])
         print(f"Resumed from {resume} at step {step}")
 
+    initial_step = step
     num_classes = cfg['model']['num_classes']
     cond_drop_prob = cfg['train'].get('cond_drop_prob', 0.1)
     t0 = time.time()
+    prior_elapsed = float(ckpt.get('elapsed_seconds', 0.0)) if resume else 0.0
+    log_path = os.path.join(output_dir, 'train_log.csv')
+    if not os.path.exists(log_path):
+        with open(log_path, 'w', newline='', encoding='utf-8') as stream:
+            csv.writer(stream).writerow(['step', 'loss_100', 'lr', 'step_per_sec', 'elapsed_seconds'])
 
     while step < cfg['train']['max_steps']:
         for x, y in loader:
@@ -166,11 +219,14 @@ def train(cfg, output_dir, seed=42, precision='fp32', resume=None):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg['train'].get('grad_clip', 1.0))
             opt.step()
+            scheduler.step()
 
             with torch.no_grad():
-                for k, v in model.state_dict().items():
-                    if v.dtype.is_floating_point:
-                        ema[k].mul_(ema_decay).add_(v.detach(), alpha=1 - ema_decay)
+                current_state = model.state_dict()
+                for ema_decay, ema in zip(ema_decays, ema_states):
+                    for k, v in current_state.items():
+                        if v.dtype.is_floating_point:
+                            ema[k].mul_(ema_decay).add_(v.detach(), alpha=1 - ema_decay)
 
             losses.append(loss.item())
             step += 1
@@ -178,20 +234,38 @@ def train(cfg, output_dir, seed=42, precision='fp32', resume=None):
             if step % cfg['train'].get('log_every', 100) == 0:
                 mean = sum(losses[-100:]) / min(len(losses), 100)
                 elapsed = time.time() - t0
-                print(f"step {step:6d} | loss {mean:.4f} | {step/elapsed:.2f} step/s", flush=True)
+                speed = (step - initial_step) / max(elapsed, 1e-6)
+                lr = opt.param_groups[0]['lr']
+                total_elapsed = prior_elapsed + elapsed
+                print(f"step {step:6d}/{cfg['train']['max_steps']} | loss {mean:.4f} | "
+                      f"lr {lr:.2e} | {speed:.2f} step/s | elapsed {total_elapsed/3600:.2f}h", flush=True)
+                with open(log_path, 'a', newline='', encoding='utf-8') as stream:
+                    csv.writer(stream).writerow([step, f'{mean:.7f}', f'{lr:.9g}',
+                                                 f'{speed:.5f}', f'{total_elapsed:.1f}'])
 
-            if step % cfg['train']['save_every'] == 0 or step >= cfg['train']['max_steps']:
+            if step % cfg['train'].get('save_every', 10000) == 0 or step >= cfg['train']['max_steps']:
+                elapsed_total = prior_elapsed + time.time() - t0
                 ckpt = {
                     'step': step,
-                    'model': model.state_dict(),
-                    'ema': ema,
+                    'model': {k: v.detach().cpu() for k, v in model.state_dict().items()},
+                    'ema': {'decays': list(ema_decays),
+                            'models': [{k: v.detach().cpu() for k, v in ema.items()}
+                                       for ema in ema_states]},
                     'opt': opt.state_dict(),
+                    'scheduler': scheduler.state_dict(),
                     'cfg': cfg,
                     'seed': seed,
                     'precision': precision,
+                    'elapsed_seconds': elapsed_total,
+                    'rng': {'torch': torch.get_rng_state(),
+                            'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                            'python': random.getstate(),
+                            'data_generator': data_generator.get_state()},
                 }
-                torch.save(ckpt, os.path.join(output_dir, f'step_{step}.pt'))
-                torch.save(ckpt, os.path.join(output_dir, 'latest.pt'))
+                _save_checkpoint(os.path.join(output_dir, 'latest.pt'), ckpt)
+                snapshot_every = int(cfg['train'].get('snapshot_every', 50000))
+                if step % snapshot_every == 0 or step >= cfg['train']['max_steps']:
+                    _save_checkpoint(os.path.join(output_dir, f'step_{step}.pt'), ckpt)
                 print(f"saved checkpoint at step {step}", flush=True)
 
             if step >= cfg['train']['max_steps']:

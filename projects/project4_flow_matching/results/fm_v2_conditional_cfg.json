@@ -1,0 +1,103 @@
+{
+  "metadata": {
+    "protocol": "torchmetrics FrechetInceptionDistance(feature=2048), CIFAR-10 train indices [0:N], uint8 RGB",
+    "checkpoint": "project4-v2-conditional-step200000.pt",
+    "checkpoint_sha256": "25666b32e914002778825a02f8e14c89f9f5ff081f9dded9f3e0ad6e0283c5aa",
+    "checkpoint_step": 200000,
+    "weights": "EMA_0.9999",
+    "git_revision": "13221ce220cd6ee96bd7266be3d30c6559c112d6",
+    "torch": "2.8.0+cu128",
+    "torchvision": "0.23.0+cu128",
+    "python": "3.12.3",
+    "device": "NVIDIA GeForce RTX 4080 SUPER",
+    "dataset_split": "CIFAR-10 train",
+    "real_indices": "0:5000",
+    "num_samples": 5000,
+    "batch_size": 64,
+    "seeds": [
+      42
+    ],
+    "class_order": "balanced cyclic 0..9",
+    "source_branch": "codex/project4-v2",
+    "source_commit": "13221ce220cd6ee96bd7266be3d30c6559c112d6",
+    "release_tag": "project4-v2.0",
+    "evaluation_seed_note": "Single seed (42); no multi-seed variance estimate."
+  },
+  "results": [
+    {
+      "seed": 42,
+      "solver": "euler",
+      "steps": 20,
+      "condition_mode": "cfg",
+      "cfg_scale": 1.0,
+      "forward_evaluations_per_sample": 40,
+      "batched_model_calls": 20,
+      "fid": 23.577329635620117,
+      "num_samples": 5000,
+      "weights": "EMA_0.9999",
+      "sample_seconds": 147.13114765821956,
+      "fid_seconds": 9.547335596056655,
+      "samples_per_second": 33.983286880999685
+    },
+    {
+      "seed": 42,
+      "solver": "euler",
+      "steps": 20,
+      "condition_mode": "cfg",
+      "cfg_scale": 2.0,
+      "forward_evaluations_per_sample": 40,
+      "batched_model_calls": 20,
+      "fid": 18.810510635375977,
+      "num_samples": 5000,
+      "weights": "EMA_0.9999",
+      "sample_seconds": 146.89180129603483,
+      "fid_seconds": 8.453133229864761,
+      "samples_per_second": 34.03865944787056
+    },
+    {
+      "seed": 42,
+      "solver": "euler",
+      "steps": 20,
+      "condition_mode": "cfg",
+      "cfg_scale": 3.0,
+      "forward_evaluations_per_sample": 40,
+      "batched_model_calls": 20,
+      "fid": 23.698301315307617,
+      "num_samples": 5000,
+      "weights": "EMA_0.9999",
+      "sample_seconds": 147.09639191790484,
+      "fid_seconds": 8.382645449135453,
+      "samples_per_second": 33.991316406934864
+    },
+    {
+      "seed": 42,
+      "solver": "euler",
+      "steps": 20,
+      "condition_mode": "cfg",
+      "cfg_scale": 5.0,
+      "forward_evaluations_per_sample": 40,
+      "batched_model_calls": 20,
+      "fid": 35.24250030517578,
+      "num_samples": 5000,
+      "weights": "EMA_0.9999",
+      "sample_seconds": 147.1447809508536,
+      "fid_seconds": 8.341027602087706,
+      "samples_per_second": 33.98013825356131
+    },
+    {
+      "seed": 42,
+      "solver": "euler",
+      "steps": 20,
+      "condition_mode": "cfg",
+      "cfg_scale": 7.5,
+      "forward_evaluations_per_sample": 40,
+      "batched_model_calls": 20,
+      "fid": 44.910980224609375,
+      "num_samples": 5000,
+      "weights": "EMA_0.9999",
+      "sample_seconds": 146.74900756799616,
+      "fid_seconds": 8.588328737998381,
+      "samples_per_second": 34.0717806741095
+    }
+  ]
+}

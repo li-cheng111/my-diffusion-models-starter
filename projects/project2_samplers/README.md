@@ -81,10 +81,10 @@ python -m projects.project2_samplers.benchmark \
 ```bash
 python -m projects.project2_samplers.monitor_dashboard --host 127.0.0.1 --port 18765
 # 本地另开终端：
-ssh -N -L 18765:127.0.0.1:18765 -p 23398 root@connect.bjb1.seetacloud.com
+ssh -N -L 18765:127.0.0.1:18765 -p SSH_PORT root@SSH_HOST
 ```
 
-然后打开 `http://127.0.0.1:18765/`。正式实验的远端页面当前运行在该端口；只要 SSH 转发保持连接，浏览器页面就会自动更新。
+将 `SSH_PORT` 和 `SSH_HOST` 替换为当前 AutoDL 实例提供的 SSH 端口和主机，然后打开 `http://127.0.0.1:18765/`。SSH 转发保持连接时，浏览器页面会自动更新；换实例后使用新实例的地址和端口。
 
 `full` 预设使用作业要求的实验矩阵：DDPM 1000 步；DDIM 和 Euler 使用
 10/20/50/100/250 步；DPM-Solver-2 使用 5/10/25/50 个外层步。DPM-Solver

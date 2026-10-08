@@ -31,6 +31,31 @@ class CheckpointUtilsTests(unittest.TestCase):
         checkpoint = {"model": model.state_dict(), "ema": flat}
         self.assertIs(model_state_from_checkpoint(checkpoint), flat)
 
+    def test_multi_ema_defaults_to_largest_decay_and_can_select_one(self):
+        low = {"weight": torch.tensor([0.25])}
+        high = {"weight": torch.tensor([0.75])}
+        checkpoint = {
+            "model": {"weight": torch.tensor([0.0])},
+            "ema": {"decays": [0.999, 0.9999], "models": [low, high]},
+        }
+        self.assertIs(model_state_from_checkpoint(checkpoint), high)
+        self.assertIs(model_state_from_checkpoint(checkpoint, ema_decay=0.999), low)
+        self.assertEqual(load_model_weights(torch.nn.Linear(1, 1, bias=False), {
+            "model": {"weight": torch.zeros(1, 1)},
+            "ema": {"decays": [0.999, 0.9999], "models": [
+                {"weight": torch.full((1, 1), 0.25)},
+                {"weight": torch.full((1, 1), 0.75)},
+            ]},
+        }, ema_decay=0.999), "EMA_0.999")
+
+    def test_multi_ema_rejects_missing_requested_decay(self):
+        checkpoint = {
+            "model": {},
+            "ema": {"decays": [0.999], "models": [{}]},
+        }
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            model_state_from_checkpoint(checkpoint, ema_decay=0.9999)
+
 
 if __name__ == "__main__":
     unittest.main()

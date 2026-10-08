@@ -22,7 +22,10 @@ __all__ = [
 def get_sampler(name: str, model, schedule, device="cuda", **kwargs):
     normalized = name.lower().replace("_", "-")
     if normalized == "ddpm":
-        return DDPMSampler(model, schedule, device)
+        return DDPMSampler(
+            model, schedule, device,
+            clip_denoised=kwargs.get("clip_denoised", True),
+        )
     if normalized == "ddim":
         return DDIMSampler(
             model,

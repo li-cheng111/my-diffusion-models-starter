@@ -1,91 +1,144 @@
-# Project 4：CIFAR-10 Flow Matching 实验报告
+# Project 4：CIFAR-10 Flow Matching v2 实验报告
 
-## 1. 实验目标与环境
+## 1. 实验设置与运行时间
 
-本项目在 CIFAR-10 训练集上实现 Conditional Flow Matching（Rectified Flow），并用同一份真实样本、同一套 TorchMetrics FID 配置比较 Flow Matching（FM）和 Project 2 的 DDPM + DDIM 基线。核心交付物是 TODO 16 的训练损失、TODO 17 的 Euler ODE 采样、TODO 18 的 velocity-space CFG，以及不同 NFE 下的 FID 曲线。
+本实验在 AutoDL 单张 NVIDIA GeForce RTX 4080 SUPER（32,760 MiB）上运行，环境为 Python
+3.12.3、PyTorch 2.8.0+cu128 和 TorchVision 0.23.0+cu128。训练数据为 CIFAR-10 train，
+模型为 32.62M 参数的 DiT-S，batch size 64，BF16 autocast，AdamW，随机种子 42，保存
+50K 间隔快照并以 10K 间隔更新续训 checkpoint。两组实验分别使用无条件 dropout=1.0
+和 conditional dropout=0.1；都训练到 200,000 optimizer steps。
 
-正式实验运行在 AutoDL 单张 NVIDIA GeForce RTX 4090（24 GB）上，Python 3.12.3、PyTorch 2.8.0+cu128、TorchVision 0.23.0+cu128、TorchMetrics 1.9.0。模型采用 DiT-S，约 32.62M 参数；batch size 128，200,000 个 optimizer steps，AdamW，EMA decay 0.9999，conditional dropout 0.1，随机种子 42，训练使用 BF16 autocast。CIFAR-10 数据直接复用 AutoDL 数据盘上的缓存，避免重复下载。
+| 阶段 | 实测用时 | 结果 |
+|---|---:|---|
+| CIFAR-10 下载与 MD5 校验 | 约 15 秒 | 固定镜像、170,498,071 字节 |
+| 100-step BF16 冒烟运行 | 约 9.3 秒 | 约 10.8 step/s |
+| Project 1 R5 + DDIM 五点扫描 | 34 分 49 秒 | 采样 2,006.3 秒，FID 计算 83.0 秒 |
+| FM-U 训练 | 4.83 小时 | step 200,000，最终 loss 0.2013 |
+| FM-C 训练 checkpoint 记录的累计时间 | 4.36 小时 | step 200,000，最终 loss 0.1665 |
+| FM-U Euler/Heun 的 10 组 FID | 20.2 分钟 | 5,000 张生成图/组 |
+| FM-C CFG 的 5 组 FID | 13.0 分钟 | 5,000 张生成图/组 |
 
-正式训练从 10:27 左右开始，16:45 保存 step 200,000，耗时约 6 小时 18 分钟，稳定吞吐约 8.81 step/s，最终训练 loss 为 0.1676。BF16 预检时 batch 128 的峰值显存约 7.47 GiB，正式运行没有显存溢出。训练 checkpoint 只保存在 AutoDL，不进入 Git。
+FM-U 训练时与约 35 分钟的 Project 1 基线评测共用 GPU，因此两段时间不能简单相加为
+总墙钟时间。FM-C 在日志达到 193K 后进程意外退出；从最后完整的 190K checkpoint 恢复，
+重新计算未保存的 3K 步并继续到 200K。最终 checkpoint 的 4.36 小时累计计时不包括第一
+次运行中这段被丢弃的计算。两次运行的原始训练日志与合并后的 CSV 均随结果提交。
 
 ## 2. Rectified Flow loss 推导
 
-设噪声 $\epsilon\sim\mathcal N(0,I)$，数据样本为 $x_1$。线性概率路径为
+令噪声 $x_0\sim\mathcal N(0,I)$，数据样本为 $x_1$，时间 $t\sim U[0,1]$。采用线性概率路径
 
-$$x_t=(1-t)\epsilon+t x_1,\qquad t\sim U[0,1].$$
+$$x_t=(1-t)x_0+t x_1.$$
 
-对时间求导得到条件速度
+对 $t$ 求导得到条件速度
 
-$$u_t(x_t\mid x_1)=\frac{d x_t}{dt}=x_1-\epsilon.$$
+$$u_t(x_t\mid x_1)=\frac{d x_t}{dt}=x_1-x_0.$$
 
-因此网络 $v_\theta(x_t,t,y)$ 的 Conditional Flow Matching 目标为
+网络 $v_\theta(x_t,t,y)$ 的 Conditional Flow Matching 目标为
 
-$$\mathcal L_{CFM}=\mathbb E_{t,\epsilon,x_1}\left[\lVert v_\theta(x_t,t,y)-(x_1-\epsilon)\rVert_2^2\right].$$
+$$\mathcal L_{CFM}=\mathbb E_{t,x_0,x_1,y}
+  \left[\lVert v_\theta(x_t,t,y)-(x_1-x_0)\rVert_2^2\right].$$
 
-代码先从 batch 图像得到 $x_1$，采样同形状标准高斯噪声和 batch 时间，再构造 $x_t$ 与 target。训练时以 10% 概率将类别替换为索引 10；两个 backbone 的 embedding 大小是 `num_classes + 1`，所以索引 10 是合法的 null token。这一设计同时完成了 CFG 所需的 conditional/unconditional 训练。
+实现先从 batch 图像构造 $x_1$，采样同形状高斯噪声和时间，再构造 $x_t$ 与 target
+$x_1-x_0$。Conditional 训练以 10% 概率把标签替换为 null token 10；类别 embedding
+大小为 `num_classes + 1`，所以该索引有效，并可供 CFG 使用。
 
-最小化 CFM loss 与不可直接计算的 FM loss 的梯度相同。原因是对条件速度的平方误差取条件分布平均后，关于网络输出的期望梯度等于关于边缘真实速度场的期望梯度；两者的标量损失不必相等，但优化方向一致。
+最小化 CFM loss 与不可直接计算的边缘 FM loss 对网络输出的期望梯度相同。这里的等价是
+优化梯度等价，不是单样本 loss 或两个 loss 的数值相等。
 
-## 3. 采样与 CFG
+## 3. 采样方法与 CFG
 
-Euler sampler 从 $x(0)\sim\mathcal N(0,I)$ 出发，将区间 $[0,1]$ 等分为 $N$ 步，并执行
+Euler 从 $x(0)\sim\mathcal N(0,I)$ 出发，按 $t_i=i/N$ 积分：
 
 $$x_{i+1}=x_i+v_\theta(x_i,t_i,y)\Delta t.$$
 
-FM 的积分方向是从 0 到 1，符号是加号。CFG 在 velocity 空间中使用
+FM 的积分方向是从 0 到 1，更新项是加号。Heun 先做 Euler 预测，再在新位置和新时间
+计算速度，并对两次速度取平均。一个 Heun 积分步需要两次网络前向，因此公平比较时按
+实际网络求值次数（NFE）作横轴。
 
-$$v=v_u+s(v_c-v_u),$$
+CFG 在线性速度场上组合无条件与条件预测：
 
-其中 $v_u$ 使用 null token，$v_c$ 使用目标类别。实现将 conditional 和 unconditional 输入沿 batch 维拼接，一次前向后拆分，降低了 Python 循环和 kernel launch 开销。另实现了 Heun 二阶 sampler：先用 Euler 预测新位置，再在新时间点评估速度并取两次速度的平均，CPU 冒烟测试已通过。
+$$v=v_u+s(v_c-v_u).$$
 
-## 4. NFE-FID 结果
+实现将两种标签的输入沿 batch 维合并为一次 batched model call，但其计算量仍相当于
+两次单路前向；结果 JSON 同时记录 batched calls 和每张图的实际 network evaluations。
 
-所有 FM FID 使用 EMA 权重、5,000 张生成图、CIFAR-10 train 的前 5,000 张真实图和 TorchMetrics `FrechetInceptionDistance(feature=2048, normalize=False)`。Project 2 DDPM 基线使用相同样本数、真实数据切分和 FID 实现；因此数值可以直接放在同一张图中观察趋势。
+## 4. 统一 NFE-FID 评测
 
-### FM Euler（CFG=0）
+所有结果使用 EMA 0.9999、CIFAR-10 train 前 5,000 张真实图、5,000 张生成图、batch size
+64 和 TorchMetrics `FrechetInceptionDistance(feature=2048, normalize=False)`。FM 与
+Project 1 DDIM 都使用 seed 42 和同一 real-image 子集。FM 的完整原始数据见
+[`results/fm_v2_unconditional_solvers.json`](results/fm_v2_unconditional_solvers.json)，
+对照 DDIM 的原始数据见
+[`../project2_samplers/results/p1_r5_ddim_5k.json`](../project2_samplers/results/p1_r5_ddim_5k.json)。
 
-| NFE | forward passes | FID |
-|---:|---:|---:|
-| 4 | 4 | 47.377 |
-| 8 | 8 | 28.305 |
-| 16 | 16 | 22.121 |
-| 32 | 32 | 19.311 |
-| 50 | 50 | 18.299 |
+### FM-U 与 Project 1 R5 + DDIM
 
-### DDPM + DDIM 基线
+| 方法 | 实际 NFE/图 | 积分步数 | FID |
+|---|---:|---:|---:|
+| FM Euler | 4 | 4 | 80.5531 |
+| FM Euler | 8 | 8 | 43.2211 |
+| FM Euler | 16 | 16 | 32.1931 |
+| FM Euler | 32 | 32 | 28.0684 |
+| FM Euler | 50 | 50 | 26.7610 |
+| FM Heun | 8 | 4 | 154.8813 |
+| FM Heun | 16 | 8 | 82.1227 |
+| FM Heun | 32 | 16 | 43.2588 |
+| FM Heun | 64 | 32 | 26.4840 |
+| FM Heun | 100 | 50 | 24.0062 |
+| R5 + DDIM | 10 | 10 | 53.0907 |
+| R5 + DDIM | 20 | 20 | 33.6099 |
+| R5 + DDIM | 50 | 50 | 23.1206 |
+| R5 + DDIM | 100 | 100 | 20.1105 |
+| R5 + DDIM | 250 | 250 | 18.3625 |
 
-| NFE | FID |
-|---:|---:|
-| 10 | 34.555 |
-| 20 | 28.159 |
-| 50 | 24.574 |
-| 100 | 22.875 |
-| 250 | 21.241 |
+![FM 与 Project 1 DDIM 的 NFE-FID 曲线](results/nfe_fid_curve_v2.png)
 
-FM 在低 NFE 区间下降很快：8 NFE 的 FID 已为 28.305，优于 DDIM 10 NFE 的 34.555；16 NFE 为 22.121，优于 DDIM 20 NFE 的 28.159；50 NFE 为 18.299，优于 DDIM 50 NFE 的 24.574。曲线在 32–50 NFE 后开始变平，说明当前 200K、5,000 样本设置下继续增加 Euler 步数的收益有限。绝对数值高于论文级结果是预期现象，原因包括模型规模、训练步数和 FID 样本数都较小。
+FM Euler 在 8 NFE 时优于 DDIM 10 NFE；16 NFE 的 FID 32.19 也略好于 DDIM 20 NFE
+的 33.61。到更高采样预算时，DDIM 表现更好：NFE 50 时 DDIM 为 23.12，FM Euler 为
+26.76；DDIM NFE 100/250 又进一步降至 20.11/18.36。Heun 以 64 次评估达到 26.48，
+只略好于 Euler 50 次评估的 26.76；在粗步数设置下 Heun 的 FID 很差。因而本次实验
+支持“FM Euler 在很低 NFE 下有优势”，但不支持“FM 在整个预算范围全面领先”。
 
 ## 5. CFG scale 扫描
 
-固定 Euler NFE=20，结果如下：
+FM-C 固定 Euler 20 个积分步，扫描 CFG scale；因为每步需要无条件和条件两次预测，
+每张图的有效网络求值数均为 40。
 
-| CFG scale | FID |
-|---:|---:|
-| 1.0 | 20.988 |
-| 2.0 | **18.349** |
-| 3.0 | 23.693 |
-| 5.0 | 35.316 |
-| 7.5 | 43.962 |
+| CFG scale | 实际 NFE/图 | FID |
+|---:|---:|---:|
+| 1.0 | 40 | 23.5773 |
+| 2.0 | 40 | **18.8105** |
+| 3.0 | 40 | 23.6983 |
+| 5.0 | 40 | 35.2425 |
+| 7.5 | 40 | 44.9110 |
 
-scale=2.0 在本次训练中最好。scale 从 3.0 开始 FID 反弹，5.0 和 7.5 明显恶化，说明过强 guidance 放大了类别条件方向，带来过饱和和多样性下降。实际使用应在 1–3 附近搜索，而不能直接照搬扩散模型常用的 7.5。
+scale=2.0 在本次设置下最好；scale 从 3.0 起 FID 反弹，较大的 guidance 会放大条件方向，
+在本实验中降低质量。完整数据见
+[`results/fm_v2_conditional_cfg.json`](results/fm_v2_conditional_cfg.json)。预览图包括
+[FM-U Heun 50 步网格](samples/fm_v2_unconditional/heun_nfe50_unconditional_cfg1.0_EMA_0.9999.png)
+和 [类别 0 / airplane 的 FM-C 网格](samples/fm_v2_conditional/class_0/euler_nfe20_cfg_cfg3.0_EMA_0.9999.png)。
 
 ## 6. 自查问题
 
-1. 线性路径的导数直接给出 $u_t=x_1-\epsilon$；这也是代码 target 的来源。
-2. CFM 和 FM 的网络输出梯度期望相同，因此可以用可采样的条件路径训练边缘速度场；“等价”指优化梯度，不是每个样本的 loss 数值相同。
-3. DDPM 的反向过程在低步数下会累积离散化误差，而 FM 学到的是从噪声到数据的连续速度场，轨迹更适合少步 ODE 积分，所以低 NFE 下优势明显。
-4. Reflow 用模型生成的配对重新训练，使路径更接近直线，减少曲率，从而改善一步或少步积分。
-5. CFG 组合的是同一时刻、同一状态下的速度估计；速度场对条件分布的线性组合仍可用于 ODE 积分，因此形式与在噪声/score 空间做 CFG 相同。
+1. **Linear path 的条件速度**：$x_t=(1-t)x_0+t x_1$，直接对 $t$ 求导得到
+   $u_t=x_1-x_0$，因此 target 不依赖 $t$。
+2. **CFM 与 FM 的关系**：条件速度对 $x_1$ 取条件期望给出边缘速度场；平方损失关于
+   网络输出的期望梯度相同，所以可以用可采样的条件路径训练边缘场。loss 数值不必相等。
+3. **低 NFE 对比**：FM 直接学习连续时间速度场，适合少步 ODE 积分，所以 Euler 在本次
+   8 次评估时优于 DDIM 10 次；但这只是当前小模型、训练预算和单 seed 的测量，不能推出
+   FM 在所有计算预算上都优于 DDIM。实际 50 次评估结果中 DDIM 更好。
+4. **Reflow**：用模型生成的新 $(x_0,x_1)$ 配对重新训练，使轨迹更直、更低曲率，减少
+   少步数值积分误差，从而改善极少步甚至一步生成。
+5. **Velocity CFG**：在同一 $(x_t,t)$ 上计算条件与无条件速度，然后线性组合。ODE 的
+   瞬时速度可以被引导，因此形式是 $v_u+s(v_c-v_u)$，与噪声或 score 空间的 CFG 类似。
 
-## 7. 结论与后续
+## 7. 结论与限制
 
-TODO 16–18 已完成并通过自检、500 步 debug、BF16 预检和正式训练。正式 FM 的 NFE-FID 曲线在低 NFE 下优于 DDIM 基线，CFG=2.0 是当前设置的较优点。最终提交包含源代码、原始 JSON、NFE-FID 图、采样图、实验日志和调试记录；大 checkpoint 与 CIFAR-10 数据不提交。
+TODO 16–18 的 loss、Euler sampler 和 velocity-space CFG 均在训练和评测流程中使用；
+两组 DiT-S 都完成 200K 训练，发布了只含推理权重的 EMA checkpoint。最终仓库保留原始
+评测 JSON、NFE-FID 图、训练 CSV、训练/评测日志、类别样图、哈希文件与复现清单；权重
+作为 GitHub Release 附件，不放入 Git 对象库。
+
+FID 每个设置只跑一个 seed，5,000 张生成图带有单次采样噪声，微小差异应谨慎解释。若要
+估计稳定性，可对多个 seed 重复生成并报告均值和标准差。CIFAR-10 低分辨率和 32.62M
+模型规模也限制了绝对生成质量。
