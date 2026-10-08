@@ -1,110 +1,170 @@
-# Project 5：VLA Action Diffusion 实验报告
+# Project 5：视觉条件动作扩散（VLA Action Diffusion）实验报告
 
 ## 摘要
 
-本项目在 64×64 RGB 的 2D reaching 环境中实现了一个简化 VLA：视觉编码器读取 agent、target 和 distractors，条件 action head 一次生成一段连续二维动作，并在闭环中周期性重规划。完成了 TODO 19（action-chunk DDPM loss）、TODO 20（vision encoder）和 TODO 21（100 集闭环评估），并额外实现了 Flow Matching 与 Pure BC 对照。AutoDL RTX 4090 上最终模型使用 H=16、DDPM 20 步采样和每 4 步重规划，在固定测试集上取得 **71% 成功率、3% 碰撞率、26% 超时率**，达到题目要求的 70% 目标。
+本项目在 64×64 RGB 的二维目标到达环境中实现视觉条件动作策略，比较行为克隆（Behavior Cloning, BC）、去噪扩散概率模型（DDPM）与 Flow Matching（FM），并研究动作块长度、填充动作掩码、视觉表征和环境变化的影响。10 种配置均训练 10,000 步，并在相同的 100 个评估回合上测试，当前最高成功率为 **91%**（DDPM，H=8，未屏蔽填充动作）；H=8 masked DDPM 为 89%，H=16 BC 为 88%，H=16 FM 为 87%。因此，在 H=16 的当前对照中，扩散策略没有显示出优于 BC 的成功率优势。DDPM 的 H=32/64 成功率随动作块变长显著下降，且主要伴随超时率上升。
 
-## 1. Design note
+## 1. 任务定义与策略设计
 
-### 1.1 Action representation 与 chunk size
+### 1.1 环境与动作块
 
-动作是环境坐标系中的 `(Δx, Δy) ∈ [-0.1, 0.1]^2`。模型不只预测下一步，而是预测 H 步 action chunk，评估时执行前 `exec_steps` 步后重新观察并采样。这样可以把短期运动的相关性作为一个整体学习，同时减少每个控制周期的采样开销。训练 demo 的轨迹中位数为 26 步；在本项目的重复末动作 padding 策略下，H=16 的 padding 为 27.5%，而 H=32 为 51.7%，因此最终选择 H=16。H=32 的实测成功率只有 14%，验证了过长 chunk 会稀释监督。
+任务要求智能体根据图像观测移动到目标位置，并避开障碍物。单步动作是环境坐标系中的二维位移：
 
-### 1.2 Vision encoder 与条件融合
+$$
+a_t=(\Delta x_t,\Delta y_t)\in[-0.1,0.1]^2.
+$$
 
-视觉编码器是三层 stride=2 的 CNN（3→32→64→128），每层使用 GroupNorm + SiLU。第一版使用 `AdaptiveAvgPool2d(1)`，但它几乎消除了 target 和障碍的空间位置信息，视觉 DDPM 只有 54% 成功率。最终版本保留 `4×4` 特征网格，再用 Linear(2048, 128) 和 LayerNorm 投影；它仍然是小于 1M 参数的 toy encoder，但能表达“目标在左/右、障碍在何处”。视觉特征与 agent 自身的 2D state、时间 embedding 拼接后输入 action denoiser。
+策略不只预测下一步，而是生成长度为 $H$ 的动作块：
 
-### 1.3 Scheduler 与训练目标
+$$
+\mathbf{a}_{t:t+H-1}=[a_t,a_{t+1},\ldots,a_{t+H-1}]\in\mathbb{R}^{H\times 2}.
+$$
 
-主模型使用 T=100 的 DDPM。给定 clean action chunk `a`、噪声 `ε` 和 `ᾱ_t`，训练构造
+执行时采用闭环控制：每次只执行预测块的前 `exec_steps=4` 步，随后重新观测并规划。动作块可以捕获短期运动的时间相关性，并减少扩散采样调用；但块过长时，开环预测误差会在重新观测前累积。专家轨迹中位长度约为 26 步；在早期重复末动作 padding 统计中，H=16、32、64 的填充比例约为 27.5%、51.7%、74.9%。H=16 因此被选作初始基准；后续公平重跑进一步测试 H=8/16/32/64，结果见第 4 节。
 
-```text
-a_t = sqrt(ᾱ_t) a + sqrt(1-ᾱ_t) ε
-L_DDPM = || ε_θ(a_t, t, image, state) - ε ||_2^2
-```
+### 1.2 视觉编码与条件融合
 
-采样时从高斯噪声开始，用 20 个反向步得到长度 H 的 action chunk。作为加分项，Flow Matching 采用 `x_t=(1-t)ε+t a`、回归向量场 `a-ε`，用 10 步 Euler 积分；Pure BC 则固定零 action 输入，直接回归 clean action。
+主模型使用三层 stride-2 CNN，通道数为 3→32→64→128，每层后接 GroupNorm 与 SiLU。空间编码版本保留 $4\times4$ 特征图，再将 2,048 维展平特征映射为 128 维，并做 LayerNorm。与全局平均池化相比，保留空间网格能够留下“目标在图像哪一侧、障碍在哪里”等位置信息。主策略将视觉特征与 agent 的二维状态特征及时间嵌入融合后，输入动作生成器。
 
-## 2. AutoDL 实验设置与可复现性
+作为另一项补充探索，项目还实现了 ImageNet 预训练 ResNet-18：将图像从 $[-1,1]$ 转换至 ImageNet mean/std 归一化，并把分类头替换成 128 维条件特征。
 
-| 项目 | 设置 |
-|---|---|
-| GPU | NVIDIA GeForce RTX 4090 24GB |
-| CPU/RAM | 16 vCPU / 120GB |
-| Python / PyTorch | 3.12.3 / 2.8.0+cu128 |
-| demos | 1,000 条成功 expert 轨迹，训练 seed=42 |
-| optimizer | Adam，lr=1e-3，weight decay=0，EMA=0.999 |
-| steps / batch | 10,000 / 256 |
-| evaluation | 100 episodes，seed 10000–10099，闭环 exec_steps=4 |
+### 1.3 训练目标
 
-AutoDL 上的启动命令和只读 dashboard 见项目 README。训练、评估和 GPU 状态通过 tmux 与 `monitor_dashboard.py` 持续写入 `status.json`、`metrics.jsonl`；本地 SSH 隧道访问 `http://127.0.0.1:18765/`。原始训练曲线保存在 `results/metrics/`，曲线图为 [results/loss_curve.png](results/loss_curve.png)。
+令 $c$ 表示图像、状态等条件，$A$ 表示干净专家动作块。DDPM 使用 $T=100$ 的余弦噪声调度。第 $t$ 步带噪动作块为：
 
-## 3. Ablation 结果
+$$
+\mathbf{a}_t=\sqrt{\bar{\alpha}_t}\,\mathbf{a}
++\sqrt{1-\bar{\alpha}_t}\,\boldsymbol{\epsilon},
+\qquad \boldsymbol{\epsilon}\sim\mathcal{N}(\mathbf{0},\mathbf{I}).
+$$
 
-| 实验 | H | 成功率 | 碰撞率 | 超时率 | 平均步数 | 平均末端距离 |
-|---|---:|---:|---:|---:|---:|---:|
-| Pure BC | 16 | 58% | 12% | 30% | 50.73 | 0.3570 |
-| DDPM + global pooling | 16 | 54% | 6% | 40% | 68.93 | 0.4114 |
-| **DDPM + 4×4 spatial pooling（最终）** | **16** | **71%** | **3%** | **26%** | **48.70** | **0.1643** |
-| Flow Matching + vision | 16 | 57% | 9% | 34% | 52.85 | 0.4804 |
-| DDPM + vision，H=32 | 32 | 14% | 1% | 85% | 95.03 | 0.6302 |
-| DDPM state-only | 16 | 81% | 12% | 7% | 55.89 | 0.1075 |
+噪声预测目标为：
 
-每一行都是同一个 100 集 seed 区间，不是训练集重放。最终 `eval_vision.json`、`eval_state.json`、`eval_bc.json` 和 `eval_fm.json` 为可直接读取的 JSON；`results/rollouts/` 中保留了 4 张成功轨迹图。
+$$
+\mathcal{L}_{\mathrm{DDPM}}
+=\mathbb{E}_{\mathbf{a},\boldsymbol{\epsilon},t}
+\left[\left\|\boldsymbol{\epsilon}_{\theta}(\mathbf{a}_t,t,c)-\boldsymbol{\epsilon}\right\|_2^2\right].
+$$
 
-训练曲线显示 spatial encoder 的 moving-average loss 在 10k 步约 0.097，低于 global pooling 版本约 0.118。单独把 DDPM 每步重规划（exec_steps=1）并没有提升成功率（54%），但碰撞降至 2%，代价是推理调用次数约增加 4 倍；这说明视觉表征而非采样频率是本任务的主要瓶颈。
+BC 直接回归专家动作块，使用均方误差：
 
-## 4. 自查问题
+$$
+\mathcal{L}_{\mathrm{BC}}
+=\mathbb{E}_{\mathbf{a},c}\left[\left\|\pi_{\theta}(c)-\mathbf{a}\right\|_2^2\right].
+$$
 
-1. **为什么 action chunk？** 连续控制相邻动作高度相关，一次预测 H 步能学习局部轨迹并减少采样次数；每步预测虽然反馈最及时，但会增加约 H/`exec_steps` 倍的模型调用。`exec_steps=1` 能更快纠偏和降低碰撞，却牺牲实时性。
+FM 在高斯噪声与数据动作之间线性插值，并回归对应速度场：
 
-2. **多模态问题？** 遇到障碍时左绕和右绕都是合理解。Pure BC 的 MSE 会把两条轨迹平均成穿过障碍的动作；diffusion 从噪声采样，能够表示多峰的 action chunk 分布，并在闭环重规划中选择不同模式。
+$$
+\mathbf{x}_t=(1-t)\boldsymbol{\epsilon}+t\mathbf{a},
+\qquad \mathbf{v}_t=\mathbf{a}-\boldsymbol{\epsilon},
+\qquad t\in[0,1],
+$$
 
-3. **条件与差值？** state-only 的 81% 比视觉 baseline 的 54% 高 27 个百分点，但 state-only 直接拿到 target 坐标且看不到障碍，不能把这 27 点解释成“视觉增益”。真正有意义的对照是相同 agent state 下 global pooling 与 spatial encoder 的 54%→71%；如果把 distractor 坐标加入 state，视觉 ablation 就失去辨识障碍视觉能力的意义。
+$$
+\mathcal{L}_{\mathrm{FM}}
+=\mathbb{E}_{\mathbf{a},\boldsymbol{\epsilon},t,c}
+\left[\left\|\mathbf{v}_{\theta}(\mathbf{x}_t,t,c)-\mathbf{v}_t\right\|_2^2\right].
+$$
 
-4. **padding？** 轨迹中位数 26 步，H=32 时 51.7% 槽位是重复末动作，H=64 时 74.9%。过多重复监督会把策略拉向小/恒定动作，造成超时。改进方法是选择 H≈任务时间尺度（本实验 H=16），使用 mask/weighted loss，或按轨迹长度自适应 chunk。
+对变长轨迹进行 padding 时，masked loss 只对真实动作位置累计误差。若 $m_h\in\{0,1\}$ 表示第 $h$ 个动作是否有效，则可写为：
 
-5. **FM vs DDPM？** FM 直接学习从噪声到动作的连续向量场，推理只需少量 Euler 步，适合实时控制；DDPM 的离散反向链通常需要更多网络调用、但训练和调试更成熟。本实验 FM 10 步的成功率为 57%，尚未超过最终 DDPM，体现了表征与采样质量之间的 trade-off。
+$$
+\mathcal{L}_{\mathrm{masked}}
+=\frac{\sum_{h=1}^{H}m_h\,\ell_h}{\sum_{h=1}^{H}m_h},
+$$
 
-## 5. Reflection：从 toy VLA 到 Pi-0/OpenVLA 部署
+其中 $\ell_h$ 是该位置对应的 BC 或扩散训练误差。
 
-这个 toy 环境没有体现工业机器人最昂贵的部分：相机和 proprioception 的时间同步、标定漂移、遮挡与光照变化、动作延迟、关节/力矩/速度约束、碰撞安全层、失败恢复和数据闭环。Pi-0/OpenVLA 还需要处理语言目标 grounding、预训练视觉 token 的 domain gap、长时任务的技能切换，以及在有限算力上的量化、缓存和延迟预算。真正部署时不能只看平均成功率；应记录每个场景的风险、置信度和 OOD 检测，给策略配一个可验证的安全控制器，并通过仿真回放、少量真实数据和人工接管逐步扩大覆盖。这个项目最有价值的经验是：空间表征、chunk 时间尺度和闭环评估必须一起设计，低 loss 本身并不等于可执行策略。
+### 1.4 采样与闭环推理
 
-## 6. 结论
+DDPM 从高斯噪声动作块开始，以修正后的 DDIM 时间表进行 20 步反向采样；FM 从噪声端出发，使用 10 步 Euler 积分。Euler 更新写作：
 
-TODO 19–21 已完成并通过自检/测试。上一轮小型 spatial CNN + H=16 DDPM 的 71% 是先导实验数字，不是后续统一协议重跑的结果；新的公平对照与当前结果以第 8 节为准（DDPM H=16 为 81%）。此前 checkpoint 和 bonus rollout 仍作为历史实验产物保留。
+$$
+\mathbf{x}_{k+1}=\mathbf{x}_k+\Delta t\,\mathbf{v}_{\theta}(\mathbf{x}_k,t_k,c).
+$$
 
-## 7. 加分项实验与讨论
+BC 一次前向推理直接得到动作块。训练使用 EMA 参数；衰减系数 $\beta=0.999$，更新为：
 
-### 7.1 双目标多模态 demo
+$$
+\theta_{\mathrm{EMA}}\leftarrow\beta\theta_{\mathrm{EMA}}+(1-\beta)\theta.
+$$
 
-为验证模型是否能覆盖多个目标模式，`reach2d_multimodal.yaml` 将目标采样改为两个离散位置 `(-0.65, 0.55)` 与 `(0.65, 0.55)`，其余障碍、H=16 和 spatial CNN 均与最终模型一致。评估额外记录 `mode_stats`，而不是只报告总体均值。100 个未见 seed（20000–20099）得到 97% 成功率（97/100）、3% 碰撞、0% 超时；左目标 mode 0 为 50/52=96.2%，右目标 mode 1 为 47/48=97.9%。这说明 action diffusion 在这个设置下没有塌缩到单一目标，两个条件模式都可执行。结果与目标位置示意见 [results/bonus_summary.png](results/bonus_summary.png)。
+所有策略按每次执行 4 步再重新规划的闭环方式评估。
 
-### 7.2 ImageNet-pretrained ResNet18 对照
+## 2. 训练环境、实验协议与复现
 
-`model.py` 增加了真实 ImageNet 权重的 ResNet18 encoder：输入从 `[-1,1]` 转换到 ImageNet mean/std，最后的分类层替换为 128 维条件特征。它约 11.48M 参数，而最终 spatial CNN 约 0.59M 参数。为避免把偶然的短训结果误当结论，我保留了两个预算：5,000 steps 的成功率为 3%（碰撞 8%、超时 89%），15,000 steps 仍为 2%（碰撞 18%、超时 80%），评估 seed 均为 30000–30099。这个负结果是有价值的对照：在 64×64、小规模 demo 和从像素直接微调的条件下，预训练 backbone 的容量与归一化开销反而使优化困难；实际使用应继续比较冻结 backbone、较大数据集、分层学习率和更长训练，而不能只看参数量或“预训练”标签。
+| 项目   | 设置                                                          |
+| ---- | ----------------------------------------------------------- |
+| 观测   | 64×64 RGB 图像及 agent 二维状态                                    |
+| 专家数据 | 1,000 条成功轨迹                                                 |
+| 随机种子 | 训练 seed=42；评估 episode seeds=10000–10099                     |
+| 训练预算 | 每个公平对照配置 10,000 optimizer steps，batch size=256              |
+| 优化器  | Adam，learning rate=$10^{-3}$，weight decay=0，EMA decay=0.999 |
+| 推理设置 | DDIM 20 步；FM-Euler 10 步；闭环 `exec_steps=4`                   |
+| 软件环境 | Python 3.12.3、PyTorch 2.8.0+cu128；AutoDL GPU 环境             |
 
-### 7.3 移动障碍泛化
+Fair rerun 的 10 个条件使用相同专家数据和 4×4 spatial CNN，并在同一组 100 个测试种子上评估。成功率、碰撞率、超时率均以 100 回合为分母；平均步数和平均末端距离也在该组回合上统计。成功率附带的 95% Wilson 区间反映 100 个评估回合的抽样不确定性；由于训练只使用 seed 42，它不代表训练种子间方差。
 
-`Reach2DEnv` 新增了有速度的 distractor：每个 step 更新位置并在边界反弹。使用静态障碍训练得到的最终 DDPM checkpoint，不重新训练，直接在速度 0.025 的动态测试环境评估 100 个 seed（40000–40099），成功率 72%、碰撞率 20%、超时率 8%，平均步数 34.94。与静态测试的 71%/3%/26% 相比，策略仍能到达目标，但碰撞明显增加，体现了观测延迟和训练分布变化带来的风险。该实验也保留了 6 张成功 rollout 图，便于复核行为。
+## 3. 实验结果
 
-三项加分实验的完整 JSON、metrics、日志和配置均已提交；`run_bonus_experiments.py` 可在 AutoDL 的 tmux 中按 preset 重新执行，`plot_bonus.py` 重新生成汇总图。Flow Matching 加分项已在第 1 节和主 ablation 中给出（10 步 Euler，57% 成功率）。
+| 配置   | H   | Padding mask | 成功率                  | 碰撞率 | 超时率 | 平均步数  | 平均末端距离 |
+| ---- | ---:|:------------:| --------------------:| ---:| ---:| -----:| ------:|
+| BC   | 16  | 是            | **88%** (80.2–93.0%) | 9%  | 3%  | 26.95 | 0.0913 |
+| DDPM | 16  | 是            | 81% (72.2–87.5%)     | 8%  | 11% | 35.57 | 0.1339 |
+| FM   | 16  | 是            | 87% (79.0–92.2%)     | 7%  | 6%  | 29.53 | 0.0987 |
+| DDPM | 8   | 是            | 89% (81.4–93.7%)     | 7%  | 4%  | 27.57 | 0.0994 |
+| DDPM | 32  | 是            | 48% (38.5–57.7%)     | 6%  | 46% | 64.39 | 0.2621 |
+| DDPM | 64  | 是            | 26% (18.4–35.4%)     | 1%  | 73% | 85.86 | 0.3668 |
+| DDPM | 8   | 否            | **91%** (83.8–95.2%) | 7%  | 2%  | 26.37 | 0.0919 |
+| DDPM | 16  | 否            | 85% (76.7–90.7%)     | 8%  | 7%  | 31.50 | 0.1115 |
+| DDPM | 32  | 否            | 66% (56.3–74.5%)     | 7%  | 27% | 54.73 | 0.2138 |
+| DDPM | 64  | 否            | 28% (20.1–37.5%)     | 9%  | 63% | 81.96 | 0.4147 |
 
-## 8. 更新后的公平重跑（单训练种子）
+以下为三个成功 episode 的轨迹示例，用于直观展示闭环行为；它们是案例图，不替代上表的 100 回合统计。
 
-以下是修复随机种子、FM 时间编码、EMA buffers 与 DDIM schedule 后完成的公平对照；此前 Section 3 的结果属于不同协议下的先导实验，不能与此表直接混比。10 个条件均使用训练 seed 42、10,000 个优化步骤、同一 4×4 spatial CNN 与专家数据，并在固定测试 seeds 10000–10099 上运行 100 个闭环 episode（`exec_steps=4`）。成功率附 Wilson 95% episode 区间；因为只有一个训练种子，该区间不表示训练种子间方差或跨种子显著性。
+| 成功轨迹 1 | 成功轨迹 2 | 成功轨迹 3 |
+|---|---|---|
+| ![成功轨迹 episode 0](results/rollouts/success_ep000.png) | ![成功轨迹 episode 1](results/rollouts/success_ep001.png) | ![成功轨迹 episode 2](results/rollouts/success_ep002.png) |
 
-| 条件 | 方法 | H | padding mask | 成功率（Wilson 95% CI） | 碰撞率 | 超时率 | 平均步数 | 平均末端距离 |
-|---|---|---:|:---:|---:|---:|---:|---:|---:|
-| BC H16 | BC | 16 | 是 | 88% (80.2–93.0%) | 9% | 3% | 26.95 | 0.0913 |
-| DDPM H16 | DDPM | 16 | 是 | 81% (72.2–87.5%) | 8% | 11% | 35.57 | 0.1339 |
-| FM H16 | FM | 16 | 是 | 87% (79.0–92.2%) | 7% | 6% | 29.53 | 0.0987 |
-| DDPM H8 | DDPM | 8 | 是 | 89% (81.4–93.7%) | 7% | 4% | 27.57 | 0.0994 |
-| DDPM H32 | DDPM | 32 | 是 | 48% (38.5–57.7%) | 6% | 46% | 64.39 | 0.2621 |
-| DDPM H64 | DDPM | 64 | 是 | 26% (18.4–35.4%) | 1% | 73% | 85.86 | 0.3668 |
-| DDPM H8 | DDPM | 8 | 否 | 91% (83.8–95.2%) | 7% | 2% | 26.37 | 0.0919 |
-| DDPM H16 | DDPM | 16 | 否 | 85% (76.7–90.7%) | 8% | 7% | 31.50 | 0.1115 |
-| DDPM H32 | DDPM | 32 | 否 | 66% (56.3–74.5%) | 7% | 27% | 54.73 | 0.2138 |
-| DDPM H64 | DDPM | 64 | 否 | 28% (20.1–37.5%) | 9% | 63% | 81.96 | 0.4147 |
+## 4. 结果解读
 
-在这次预算下，BC 与 FM 的 H16 成功率高于 DDPM H16；因此目前不能声称 diffusion 在此任务上优于 BC。H=8 表现最好，而 H=32/64 的超时随 chunk 变长明显增加，符合过长动作序列削弱闭环纠偏的预期。Padding mask 在本次单种子结果中没有带来提升，H16/32 的 masked 结果反而较低；这需要更多训练种子和损失/数据诊断才能判断原因，不应据此宣称 mask 普遍有害。机器可读完整结果见 [`results/fair_seed42/fair_summary.json`](results/fair_seed42/fair_summary.json) 与 [`results/fair_seed42/fair_ablation.md`](results/fair_seed42/fair_ablation.md)。
+### 4.1 动作块长度与掩码影响
+
+DDPM 在 H=8 时成功率最高，为 masked 89%、unmasked 91%；H=16 降为 81% 和 85%；H=32 为 48% 和 66%；H=64 为 26% 和 28%。H 增长时超时率同步上升，尤其 H=64 masked 的超时率达到 73%，这更符合长动作块使策略难以及时纠偏、最终在时限内未到达目标的解释。当前环境和每 4 步重规划的设置下，短规划跨度更合适。
+
+padding mask 本轮没有显示稳定收益：H=8/16/32/64 的 masked 成功率均低于对应 unmasked 点估计，分别为 89/81/48/26% 对 91/85/66/28%。
+
+### 4.2 BC、DDPM 与 FM 的比较
+
+在 H=16、masked 的比较中，BC 成功率为 88%，FM 为 87%，DDPM 为 81%。在本项目当前的实现、数据规模、训练预算与评估设置下，DDPM 没有显示出超过 BC 的成功率优势，FM 的结果则接近 BC，采用 10 步 Euler 推理。
+
+Pure BC 的均方误差在多峰示范分布下可能产生平均化动作，而扩散采样具有表达多峰动作分布的建模潜力；不过，本轮结果本身并没有证明这种潜力带来更高任务成功率。需要结合动作多样性、失败案例和多训练种子结果进一步验证。
+
+### 4.3 先导训练曲线
+
+下图展示早期先导实验中 global pooling、spatial pooling、state-only DDPM 和视觉 FM 的 moving-average loss。它属于先导阶段，不能当作本轮 fair rerun 十种配置的训练曲线；曲线较低也不直接等价于闭环任务成功率较高。
+
+![Project 5 先导实验训练损失曲线](results/loss_curve.png)
+
+## 5. 扩展实验：多模态、视觉迁移与动态障碍
+
+### 5.1 双目标条件与多模态行为
+
+双目标配置将目标设为两个离散位置 $(-0.65,0.55)$ 与 $(0.65,0.55)$，其它障碍、H=16 与 spatial CNN 保持该实验原有设置。评估使用 100 个未见种子 `20000–20099`，成功率 97%（97/100）、碰撞率 3%、超时率 0%。按目标位置分组，mode 0 成功 50/52（96.2%），mode 1 成功 47/48（97.9%）。这说明模型能够完成两类目标条件。
+
+![双目标实验及加分项结果汇总](results/bonus_summary.png)
+
+需要限定“展示双模态”的结论：当前环境每回合先从两个目标位置中选一个，再把选中的目标画进图像；评估只是分别统计两类目标条件下的成功率。固定观测中目标位置已经确定，因此 97% 的结果证明了两类目标条件都能完成，尚未证明模型在**同一观测条件**下能够采样出两种不同的合理动作模式。要验证行为分布双模态，需要固定 agent、目标和障碍布局，构造同一观测下两种均有效的示范路线（例如绕障碍左行和右行），再固定观测改变采样噪声、多次生成并检查两类轨迹是否都出现。
+
+### 5.2 预训练视觉编码器对照
+
+ImageNet 预训练 ResNet-18 的实验在 5,000 步时成功率为 3%（碰撞 8%、超时 89%），15,000 步时为 2%（碰撞 18%、超时 80%）；评估种子为 `30000–30099`。该结果表明，把 ImageNet backbone 直接迁移到当前 64×64、小规模示范数据设置中并未奏效。
+
+### 5.3 移动障碍物下的泛化
+
+环境增加了随时间移动、到边界后反弹的 distractor。静态障碍训练得到的 DDPM checkpoint 不重新训练，直接在障碍速度 `0.025` 的动态测试环境评估 100 个种子 `40000–40099`，得到成功率 72%、碰撞率 20%、超时率 8%，平均步数 34.94。原记录中该 checkpoint 对应的静态测试为 71%/3%/26%；动态环境下仍有较高到达率，但碰撞明显增加，说明静态训练策略在环境变化下存在安全风险。该静态对照属于早期实验协议，不应与第 3 节公平重跑中最高的 91% 直接作模型性能比较。
+
+## 结论
+
+实现修复后的单种子公平重跑表明，在当前二维目标到达任务与闭环设置下，DDPM H=8 的点估计最高（91%）；H=16 的 BC 与 FM 点估计分别为 88% 和 87%，高于 DDPM masked 的 81%，因此目前没有证据支持“DDPM 优于 BC”。动作块增至 H=32/64 后超时显著增加，padding mask 在单种子结果中也没有带来可见改善。早期 71% 结果、state-only 对照和三项加分实验已分别作为历史或扩展结果说明，不与主公平对照混比。下一步应以多个训练种子验证趋势，再讨论算法优劣和部署泛化。
