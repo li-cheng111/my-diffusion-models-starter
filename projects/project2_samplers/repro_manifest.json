@@ -7,7 +7,7 @@
   "sha256": "937853559a1377660f7d4cbd1dd3f7c6cf022aed4ab84e9daa918a6e34541412",
   "source_environment": "AutoDL RTX 4090, Ubuntu 22.04, Python 3.12.3, PyTorch 2.8.0+cu128",
   "data": "CIFAR-10 train split; download automatically to .local/datasets",
-  "download": "gh release download project2-v1.0 --repo li-cheng111/diffusion-models-starter --pattern project2-input-ddpm-cifar10-linear-seed44.pt --dir .local/checkpoints",
+  "download": "gh release download project2-v1.0 --repo li-cheng111/my-diffusion-models-starter --pattern project2-input-ddpm-cifar10-linear-seed44.pt --dir .local/checkpoints",
   "verify": "sha256sum -c projects/project2_samplers/repro_manifest.sha256",
   "run": "python -m projects.project2_samplers.benchmark --ckpt .local/checkpoints/project2-input-ddpm-cifar10-linear-seed44.pt --preset full --num_samples 5000 --batch_size 64 --seed 42 --data_root .local/datasets --output projects/project2_samplers/runs/benchmark_all.json --plot projects/project2_samplers/runs/pareto_fid_nfe.png"
 }
