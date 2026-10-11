@@ -190,17 +190,17 @@ evaluate_lora.py 在 SD pipeline 中评估 base、checkpoint-0200、0400、0600�
 
 ### 推理与采样
 
-1. **CFG scale 设为 0，prompt 还会影响结果吗？** CFG 公式为 `ε = ε_uncond + s(ε_cond - ε_uncond)`。当 `s=0` 时结果只取 unconditional 预测，因此 prompt 不再通过 CFG 引导生成；这不等于文本编码器没有运行。
-2. **只把 conditional embedding 输入 UNet 会怎样？** 模型仍按 prompt 条件去噪，但没有 unconditional 预测作对照，因而无法计算 CFG 的外推方向。它不是“无条件生成”，也不等价于把 CFG scale 设成 0。
-3. **把初始 latent 乘以 0.5 会怎样？** latent 的形状仍正确，但噪声幅度与 scheduler 预期不符，后续去噪轨迹随之改变，可能影响构图、对比度和细节。应按当前 scheduler 的 `init_noise_sigma` 缩放初始噪声。
-4. **反向去噪是不是 forward 加噪的简单逆过程？** 不是。forward 是逐步加入随机噪声；反向过程由 UNet 估计噪声或速度，再由 scheduler 近似更新。它不会逐步还原某次加噪所丢失的全部信息。
+1. **CFG scale 设为 0，prompt 还会影响结果吗？** CFG 公式为 `ε = ε_uncond + s(ε_cond - ε_uncond)`。当 `s=0` 时结果只取 unconditional 预测，因此 prompt 不再通过 CFG 引导生成。
+2. **只把 conditional embedding 输入 UNet 会怎样？** 模型仍按 prompt 条件去噪，但没有 unconditional 预测作对照，因而无法计算 CFG 的外推方向，效果相当于标准 CFG 的 s=1，图像仍能生成，但 prompt 约束通常弱于 s>1 的 CFG。
+3. **把初始 latent 乘以 0.5 会怎样？** latent 的形状仍正确，但噪声幅度与 scheduler 预期不符，后续去噪轨迹随之改变，可能影响构图、对比度和细节。
+4. **反向去噪是不是 forward 加噪的简单逆过程？** 不是。forward 是逐步加入随机噪声；反向过程由 UNet 估计噪声或速度，再由 scheduler 近似更新。它不会逐步还原某次加噪所丢失的全部信息，不是简单的逆过程。
 5. **为什么 5 个采样步通常不如更多步？** 每一步都要跨越更大的噪声区间，有限次更新难以充分修正误差，细节和结构更容易不稳定。增加步数通常提高细化程度，但会增加耗时，且收益并非线性增长。
 
 ### ControlNet 条件控制
 
 6. **为什么 ControlNet 使用额外的条件分支？** 分支把边缘等空间条件编码成多尺度特征，再以 residual 注入冻结的 Stable Diffusion 主干。这样既保留原模型的生成能力，也能学习结构控制，不必从头训练或大幅改写主干。
 7. **Zero convolution 的作用是什么？** 它是零初始化的卷积层，因此训练开始时分支注入主干的 residual 为零，模型行为接近原始 Stable Diffusion。训练中这些卷积逐渐学会传递有效控制信号。
-8. **边缘结构与文字 prompt 冲突时，谁优先？** 没有固定赢家：ControlNet 倾向保留输入的轮廓和布局，prompt 倾向指定对象语义与风格；控制强度、CFG 和模型先验共同影响取舍。项目中的冲突样例用于展示这种折中，而不是证明某一条件总会胜出。
+8. **边缘结构与文字 prompt 冲突时，谁优先？** 没有固定的优先者：ControlNet 倾向保留输入的轮廓和布局，prompt 倾向指定对象语义与风格。控制强度、CFG 和模型先验共同影响取舍。
 9. **冻结基础模型后，ControlNet 还增加成本吗？** 会。冻结可以减少训练时主干的梯度与优化器状态，但推理时仍须运行 ControlNet 分支并计算注入特征，因此显存占用和每个去噪步的耗时都会增加。
 
 ### Stable Diffusion 的经验与局限
