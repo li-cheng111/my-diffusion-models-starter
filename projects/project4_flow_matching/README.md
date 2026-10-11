@@ -29,124 +29,115 @@ $$
 
 ## 环境、数据与训练
 
-v2 训练环境为 Python 3.12.3、PyTorch 2.8.0+cu128、TorchVision 0.23.0+cu128，硬件为
-AutoDL 单卡 NVIDIA RTX 4080 SUPER（32,760 MiB）。在仓库根目录安装依赖：
+### 环境与依赖
 
-```bash
-pip install -r requirements/project4.txt
-```
+| 参数 | 实际设置 |
+|---|---|
+| 运行平台 | AutoDL |
+| GPU | NVIDIA GeForce RTX 4080 SUPER，32,760 MiB |
+| Python | 3.12.3 |
+| PyTorch / CUDA | PyTorch 2.8.0+cu128，CUDA 12.8 |
+| TorchVision | 0.23.0+cu128 |
+| TorchMetrics | 1.9.0 |
+| 计算精度 | BF16 autocast |
+| 项目依赖 | [requirements/project4.txt](../../requirements/project4.txt) |
 
-训练脚本会通过 TorchVision 自动下载 CIFAR-10 到配置指定的 `data/`。如需使用实验所用镜像
-预下载，压缩包为 170,498,071 字节，MD5 为 `c58f30108f718f92721af3b95e74349a`：
+### 数据
 
-```bash
-mkdir -p data
-curl -fL -o data/cifar-10-python.tar.gz \
-  https://hf-mirror.com/datasets/MIT-OL-AI-D/cifar-10-python/resolve/a48007227f9e2cd0af96175f4afb5ac4965e261b/cifar-10-python.tar.gz
-echo 'c58f30108f718f92721af3b95e74349a  data/cifar-10-python.tar.gz' | md5sum -c -
-```
+| 参数 | 实际设置 |
+|---|---|
+| 数据集与划分 | CIFAR-10 train |
+| 图像规格 | 32 × 32，RGB |
+| 训练变换 | 随机水平翻转；转为 Tensor 后按通道归一化到 [-1, 1] |
+| DataLoader workers | 6 |
+| 下载方式 | 实验使用固定镜像；训练脚本也支持 TorchVision 自动下载 |
+| 归档文件 | [cifar-10-python.tar.gz](https://hf-mirror.com/datasets/MIT-OL-AI-D/cifar-10-python/resolve/a48007227f9e2cd0af96175f4afb5ac4965e261b/cifar-10-python.tar.gz) |
+| 归档大小 | 170,498,071 字节 |
+| MD5 | c58f30108f718f92721af3b95e74349a |
 
-从仓库根目录分别启动两组训练：
+### 训练配置
 
-```bash
-python projects/project4_flow_matching/train.py \
-  --config projects/project4_flow_matching/configs/cifar10_fm_v2_unconditional.yaml \
-  --output runs/fm_v2_unconditional --seed 42 --precision bf16
+| 参数 | FM-U（无条件） | FM-C（类别条件） |
+|---|---|---|
+| 配置文件 | [cifar10_fm_v2_unconditional.yaml](configs/cifar10_fm_v2_unconditional.yaml) | [cifar10_fm_v2_conditional.yaml](configs/cifar10_fm_v2_conditional.yaml) |
+| 条件 dropout 概率 | 1.0；所有样本使用 null token | 0.1；随机将标签替换为 null token |
+| 输出目录 | runs/fm_v2_unconditional | runs/fm_v2_conditional |
 
-python projects/project4_flow_matching/train.py \
-  --config projects/project4_flow_matching/configs/cifar10_fm_v2_conditional.yaml \
-  --output runs/fm_v2_conditional --seed 42 --precision bf16
-```
+| 两组共用参数 | 实际设置 |
+|---|---|
+| 模型 | DiT-S，32.62M 参数；embed dim 384、depth 12、6 heads、patch size 2 |
+| 时间嵌入尺度 | 1000 |
+| 优化器 | AdamW；learning rate 2e-4；weight decay 0 |
+| Batch size | 64 |
+| 训练步数 | 200,000 optimizer steps |
+| 随机种子 | 42 |
+| 梯度裁剪 | 1.0 |
+| EMA decay | 0.999、0.9995、0.9999 |
+| 学习率计划 | 前 2,000 步 warmup；从 100,000 步起 cosine decay；最低为初始学习率的 0.1 |
+| 日志频率 | 每 100 步 |
+| checkpoint 频率 | 每 10,000 步更新 latest.pt；每 50,000 步保存快照 |
+| 可恢复状态 | 模型、优化器、scheduler、EMA、随机数生成器状态 |
 
-两组配置均为 batch size 64、AdamW、200,000 optimizer steps、seed 42，维护 EMA 0.999、
-0.9995、0.9999；前 2,000 步 warmup，从 100,000 步起 cosine 衰减。训练每 100 步记录
-loss、学习率、速度和耗时；每 10,000 步更新 `latest.pt`，每 50,000 步保存快照。checkpoint
-包含模型、优化器、scheduler、EMA 和随机数状态，可从最后完整保存点续训：
+| 实测训练记录 | FM-U | FM-C |
+|---|---:|---:|
+| 完成步数 | 200,000 | 200,000 |
+| 最终 loss | 0.2013 | 0.1665 |
+| checkpoint 累计耗时 | 4.83 小时 | 4.36 小时 |
+| 备注 | 训练期间与约 35 分钟的 Project 1 评测共用 GPU | 进程在 193K 后退出；从 190K checkpoint 恢复，重算的 3K 步未计入 4.36 小时 |
 
-```bash
-python projects/project4_flow_matching/train.py \
-  --config projects/project4_flow_matching/configs/cifar10_fm_v2_unconditional.yaml \
-  --output runs/fm_v2_unconditional --seed 42 --precision bf16 \
-  --resume runs/fm_v2_unconditional/latest.pt
-```
-
-将配置和输出目录改为 FM-C 对应路径即可恢复 conditional 训练。v2 实测 FM-U 用时 4.83
-小时，最终 loss 0.2013。FM-C 最终 checkpoint 记录 4.36 小时、loss 0.1665；训练进程在
-193K 后退出，从 190K checkpoint 恢复到 200K，重算的 3K 步不计入该累计时间。FM-U 训练
-期间 GPU 还运行了约 35 分钟的 Project 1 评测；因此这些时间是本次运行记录，不是硬件性能保证。
+这些用时是本次运行记录，不代表其他 GPU 或负载下的固定训练时间。
 
 ## 使用已发布权重
 
-Release 提供 EMA 0.9999 的推理权重与评测归档。权重文件不纳入 Git：
+[GitHub Release project4-v2.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v2.0) 提供 EMA 0.9999 推理权重和评测归档；checkpoint 不存入 Git 仓库。
 
-| Release 文件 | 大小 | SHA-256 |
-|---|---:|---|
-| `project4-v2-unconditional-step200000.pt` | 522,147,167 B | `b75cbe3d4f9aeb16c66cb53e4acb03f9c2c6a18421efd945f78475cd2e114571` |
-| `project4-v2-conditional-step200000.pt` | 522,146,099 B | `25666b32e914002778825a02f8e14c89f9f5ff081f9dded9f3f0ad6e0283c5aa` |
-| `project4_v2_results_only.tar.gz` | 654,483 B | `e8ea255f9ae63f666b47bbdab30d494307285d9ba30b7276e248ce800bf8802a` |
+| Release 文件 | 用途 | 大小 | SHA-256 |
+|---|---|---:|---|
+| project4-v2-unconditional-step200000.pt | FM-U，step 200,000 | 522,147,167 B | b75cbe3d4f9aeb16c66cb53e4acb03f9c2c6a18421efd945f78475cd2e114571 |
+| project4-v2-conditional-step200000.pt | FM-C，step 200,000 | 522,146,099 B | 25666b32e914002778825a02f8e14c89f9f5ff081f9dded9f3f0ad6e0283c5aa |
+| project4_v2_results_only.tar.gz | 评测 JSON、样本网格、训练 CSV、训练与评测日志 | 654,483 B | e8ea255f9ae63f666b47bbdab30d494307285d9ba30b7276e248ce800bf8802a |
 
-下载权重及结果归档，并校验哈希：
-
-```bash
-mkdir -p checkpoints
-wget -O checkpoints/project4-v2-unconditional-step200000.pt \
-  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project4-v2.0/project4-v2-unconditional-step200000.pt
-wget -O checkpoints/project4-v2-conditional-step200000.pt \
-  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project4-v2.0/project4-v2-conditional-step200000.pt
-wget -O project4_v2_results_only.tar.gz \
-  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project4-v2.0/project4_v2_results_only.tar.gz
-wget -O project4_v2_results_only.tar.gz.sha256 \
-  https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project4-v2.0/project4_v2_results_only.tar.gz.sha256
-sha256sum -c project4_v2_results_only.tar.gz.sha256
-echo 'b75cbe3d4f9aeb16c66cb53e4acb03f9c2c6a18421efd945f78475cd2e114571  checkpoints/project4-v2-unconditional-step200000.pt' | sha256sum -c -
-echo '25666b32e914002778825a02f8e14c89f9f5ff081f9dded9f3f0ad6e0283c5aa  checkpoints/project4-v2-conditional-step200000.pt' | sha256sum -c -
-```
-
-结果归档包含评测 JSON、样本网格、训练 CSV 及训练/评测日志。训练 checkpoint 如需发布，先用
-[`export_checkpoint.py`](export_checkpoint.py) 移除优化器与 RNG 状态，再发布推理权重。
+训练 checkpoint 可通过 [export_checkpoint.py](export_checkpoint.py) 导出为仅供推理的权重。各文件哈希也记录在 [repro_manifest_v2.json](repro_manifest_v2.json)。
 
 ## 采样与评测
 
-`sample.py --nfe` 参数表示积分步数。无条件采样示例：
+### 采样设置
 
-```bash
-python projects/project4_flow_matching/sample.py \
-  --model checkpoints/project4-v2-unconditional-step200000.pt \
-  --condition unconditional --solver euler --nfe 50 \
-  --n_samples 64 --seed 42 --output samples/fm_v2_unconditional
-```
+| 实验 | 条件模式 | 求解器 | 积分步数 | 实际网络评估次数/图 |
+|---|---|---|---|---|
+| FM-U NFE 扫描 | 无条件，使用 null token | Euler | 4、8、16、32、50 | 4、8、16、32、50 |
+| FM-U NFE 扫描 | 无条件，使用 null token | Heun | 4、8、16、32、50 | 8、16、32、64、100 |
+| FM-C CFG 扫描 | 无条件与类别条件预测做 CFG | Euler | 20 | 40 |
 
-FM-C 的类别 0 CFG 示例：
+| CFG 参数 | 实际设置 |
+|---|---|
+| Guidance scales | 1、2、3、5、7.5 |
+| 每步模型调用 | 条件与无条件预测合并为一次 batch 前向 |
+| 实际计算量 | 每个积分步包含两路预测；NFE 按每张图的网络评估数计 |
 
-```bash
-python projects/project4_flow_matching/sample.py \
-  --model checkpoints/project4-v2-conditional-step200000.pt \
-  --condition cfg --solver euler --nfe 20 --cfg 2 \
-  --class_label 0 --n_samples 64 --seed 42 \
-  --output samples/fm_v2_conditional
-```
+仓库中的样本网格记录了以下设置：
 
-复现 FM-U 的 Euler / Heun 扫描和 FM-C 的 CFG 扫描：
+| 样本网格 | 条件与类别 | 求解器 | 积分步数 | 实际网络评估次数/图 | CFG scale | 权重 |
+|---|---|---|---:|---:|---:|---|
+| [FM-U](samples/fm_v2_unconditional/heun_nfe50_unconditional_cfg1.0_EMA_0.9999.png) | 无条件 | Heun | 50 | 100 | — | EMA 0.9999 |
+| [FM-C 类别 0](samples/fm_v2_conditional/class_0/euler_nfe20_cfg_cfg3.0_EMA_0.9999.png) | CFG，类别 0 | Euler | 20 | 40 | 3.0 | EMA 0.9999 |
 
-```bash
-python projects/project4_flow_matching/eval_fid.py \
-  --model checkpoints/project4-v2-unconditional-step200000.pt \
-  --condition unconditional --solver euler heun --nfe 4 8 16 32 50 \
-  --num_samples 5000 --batch_size 64 --seeds 42 \
-  --output projects/project4_flow_matching/results/fm_v2_unconditional_solvers.json
+### FID 评测协议
 
-python projects/project4_flow_matching/eval_fid.py \
-  --model checkpoints/project4-v2-conditional-step200000.pt \
-  --condition cfg --solver euler --nfe 20 --cfg 1 2 3 5 7.5 \
-  --num_samples 5000 --batch_size 64 --seeds 42 \
-  --output projects/project4_flow_matching/results/fm_v2_conditional_cfg.json
-```
+| 参数 | 实际设置 |
+|---|---|
+| 指标 | TorchMetrics FrechetInceptionDistance(feature=2048, normalize=False) |
+| 真实图像 | CIFAR-10 train 的前 5,000 张（索引 0–4,999） |
+| 生成图像 | 每组 5,000 张 |
+| 图像格式 | uint8 RGB |
+| Batch size | 64 |
+| 评测随机种子 | 42；类别条件评测按 0–9 循环平衡采样 |
+| checkpoint 权重 | EMA 0.9999 |
+| FM-U Euler / Heun 扫描用时 | 约 20.2 分钟，含采样与 FID |
+| FM-C CFG 扫描用时 | 约 13.0 分钟，含采样与 FID |
+| 原始结果 | [fm_v2_unconditional_solvers.json](results/fm_v2_unconditional_solvers.json)、[fm_v2_conditional_cfg.json](results/fm_v2_conditional_cfg.json) |
 
-评测使用 CIFAR-10 train 前 5,000 张真实图、5,000 张生成图、TorchMetrics
-`FrechetInceptionDistance(feature=2048, normalize=False)`、batch size 64、seed 42 和
-EMA 0.9999。CFG 将无条件与条件输入合并为一次 batch 前向；JSON 中的
-`batched_model_calls` 记录批量调用数，`forward_evaluations_per_sample` 计入两路预测的实际成本。
-要估计种子波动，可将 `--seeds 42` 改为多个 seed，并报告分布而非单次值。
+所有 FID 结果来自单个生成种子 42，没有多种子方差估计；小幅差异应谨慎解释。Heun 每个积分步需要两次网络评估，CFG 每个积分步需要两路预测，因此比较预算时应使用实际 NFE，而不是只比较积分步数。
 
 ## v2 实测结果
 
