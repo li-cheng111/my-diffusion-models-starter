@@ -188,27 +188,61 @@ evaluate_lora.py 在 SD pipeline 中评估 base、checkpoint-0200、0400、0600�
 
 ## 9. 自查问题与结论
 
-1. **CFG=0 会怎样？** 只使用 unconditional 预测，prompt 的条件方向不被 CFG 采用。
-2. **只用 conditional embedding 会怎样？** 仍可条件采样，但不再有 unconditional-to-conditional 外推，prompt adherence 往往不同。
-3. **init_noise_sigma 误设为 0.5 会怎样？** 初始 latent 尺度不匹配 scheduler 的预期，可能造成亮度、对比度或细节异常；应使用 scheduler 给定值。
-4. **反向 latent 是否是 forward process 的简单逆过程？** 否。噪声整体下降，但 UNet、CFG 和 scheduler 参数化都会影响更新。
-5. **为什么 5 steps 往往质量较差？** 采样校正次数太少，离散化误差更明显；更多 steps 有帮助但收益递减。
-6. **ControlNet 为什么有条件分支？** 冻结的基础模型保留原有能力，条件分支学习结构 residual，而不是从头破坏主体生成网络。
-7. **zero-convolution 为什么重要？** 其零初始化令 ControlNet 初始 residual 为零，让训练初期接近原模型；之后权重学习到结构控制。
-8. **结构条件和 prompt 冲突时如何理解？** ControlNet 提供空间结构，文本提供语义/风格，最终由控制强度、CFG 和采样共同决定折中；冲突图用于观察实际取舍。
-9. **ControlNet 增加什么成本？** 条件分支的特征提取和 residual 计算会增加显存和推理时间，尽管 base 权重可冻结复用。
-10. **CFG 为什么常用 7.5？** 它是 adherence 与自然度/伪影的经验折中，不是理论常数；最合适范围依 prompt、模型和 scheduler 而变。
-11. **为什么 SD 1.5 常见 512×512？** VAE 将图像压缩至 64×64 latent，成本可控；分辨率翻倍会让 latent 位置数量约增至四倍。
-12. **为什么扩散模型常画不好文字？** CLIP/tokenizer 更偏词级语义而非字符排版；训练目标、数据对齐与 VAE 对细线条的平滑共同限制文字准确度。
+### 推理与采样
 
-## 10. 代码与产物索引
+1. **CFG scale 设为 0，prompt 还会影响结果吗？** CFG 公式为 `ε = ε_uncond + s(ε_cond - ε_uncond)`。当 `s=0` 时结果只取 unconditional 预测，因此 prompt 不再通过 CFG 引导生成；这不等于文本编码器没有运行。
+2. **只把 conditional embedding 输入 UNet 会怎样？** 模型仍按 prompt 条件去噪，但没有 unconditional 预测作对照，因而无法计算 CFG 的外推方向。它不是“无条件生成”，也不等价于把 CFG scale 设成 0。
+3. **把初始 latent 乘以 0.5 会怎样？** latent 的形状仍正确，但噪声幅度与 scheduler 预期不符，后续去噪轨迹随之改变，可能影响构图、对比度和细节。应按当前 scheduler 的 `init_noise_sigma` 缩放初始噪声。
+4. **反向去噪是不是 forward 加噪的简单逆过程？** 不是。forward 是逐步加入随机噪声；反向过程由 UNet 估计噪声或速度，再由 scheduler 近似更新。它不会逐步还原某次加噪所丢失的全部信息。
+5. **为什么 5 个采样步通常不如更多步？** 每一步都要跨越更大的噪声区间，有限次更新难以充分修正误差，细节和结构更容易不稳定。增加步数通常提高细化程度，但会增加耗时，且收益并非线性增长。
 
-- A：01_inference_walkthrough.ipynb、outputs/manual/
-- B：02_parameter_sweep.py、outputs/sweep/、outputs/sweep_smoke/
-- C：05_vae_anatomy.ipynb、outputs/vae_*.png、outputs/vae_metrics.json
-- D：03_lora_finetune.py、evaluate_lora.py、outputs/lora/full/、outputs/lora/full_eval/
-- E：04_controlnet_demo.ipynb、06_cross_attention_visualization.py、outputs/controlnet/、outputs/attention/
-- 环境与日志：outputs/autodl_environment.json、logs/
-- 阅读笔记：notes/、reading_notes/
-- 报告图生成：make_report_figures.py；仓库中的汇总图保存在 outputs/report/，其他内嵌图直接引用对应的已提交实验 PNG。
+### ControlNet 条件控制
 
+6. **为什么 ControlNet 使用额外的条件分支？** 分支把边缘等空间条件编码成多尺度特征，再以 residual 注入冻结的 Stable Diffusion 主干。这样既保留原模型的生成能力，也能学习结构控制，不必从头训练或大幅改写主干。
+7. **Zero convolution 的作用是什么？** 它是零初始化的卷积层，因此训练开始时分支注入主干的 residual 为零，模型行为接近原始 Stable Diffusion。训练中这些卷积逐渐学会传递有效控制信号。
+8. **边缘结构与文字 prompt 冲突时，谁优先？** 没有固定赢家：ControlNet 倾向保留输入的轮廓和布局，prompt 倾向指定对象语义与风格；控制强度、CFG 和模型先验共同影响取舍。项目中的冲突样例用于展示这种折中，而不是证明某一条件总会胜出。
+9. **冻结基础模型后，ControlNet 还增加成本吗？** 会。冻结可以减少训练时主干的梯度与优化器状态，但推理时仍须运行 ControlNet 分支并计算注入特征，因此显存占用和每个去噪步的耗时都会增加。
+
+### Stable Diffusion 的经验与局限
+
+10. **为什么常见 CFG scale 是 7.5？** 这是 SD 1.5 工作流中常用的经验起点，不是理论常数。调高通常会加强 prompt 对齐，也可能带来过饱和或伪影；调低可能更自然，但文本约束变弱。合适值需结合 prompt、模型与 sampler 比较。
+11. **为什么 SD 1.5 常用 512×512？** 512 是其典型训练分辨率。VAE 的 8 倍下采样会把 512×512 图像映射到 `4×64×64` latent；宽高同时翻倍时，latent 空间位置数变为 4 倍，计算和显存开销也会上升。更高分辨率不保证细节质量同步提升。
+12. **为什么扩散模型容易把文字画错？** 主要瓶颈不只是 tokenizer：文本条件更擅长表达整体语义，模型并未被专门训练成精确排版器；低分辨率训练与 VAE 压缩又会损失细小笔画。因此拼写、字数和位置都可能不准确。
+
+## 10. 代码、产物与 Release 索引
+
+### 实验代码与仓库内结果
+
+| 内容 | 主要代码 | 结果与记录 |
+| --- | --- | --- |
+| A · 手写推理 | [`01_inference_walkthrough.ipynb`](01_inference_walkthrough.ipynb) | [`outputs/manual/`](outputs/manual/) |
+| B · 参数扫描 | [`02_parameter_sweep.py`](02_parameter_sweep.py) | [`outputs/sweep/`](outputs/sweep/)、[`outputs/sweep_smoke/`](outputs/sweep_smoke/) |
+| C · VAE 解剖 | [`05_vae_anatomy.ipynb`](05_vae_anatomy.ipynb) | `outputs/vae_*.png`、[`outputs/vae_metrics.json`](outputs/vae_metrics.json) |
+| D · LoRA 训练与评估 | [`03_lora_finetune.py`](03_lora_finetune.py)、[`evaluate_lora.py`](evaluate_lora.py) | [`outputs/lora/full/`](outputs/lora/full/)、[`outputs/lora/full_eval/`](outputs/lora/full_eval/) |
+| E · ControlNet 与 cross-attention | [`04_controlnet_demo.ipynb`](04_controlnet_demo.ipynb)、[`06_cross_attention_visualization.py`](06_cross_attention_visualization.py) | [`outputs/controlnet/`](outputs/controlnet/)、[`outputs/attention/`](outputs/attention/) |
+| 环境、实验日志与阅读笔记 | [`outputs/autodl_environment.json`](outputs/autodl_environment.json)、[`logs/`](logs/)、[`notes/`](notes/)、[`reading_notes/`](reading_notes/) | AutoDL 环境、实验配置、运行记录及论文阅读笔记 |
+| 报告图 | [`make_report_figures.py`](make_report_figures.py) | [`outputs/report/`](outputs/report/)；其他插图直接引用已提交的实验 PNG |
+
+### GitHub Release
+
+| 发布内容 | 说明 |
+| --- | --- |
+| [Project3 reproducibility v1.0 · `project3-v1.0`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project3-v1.0) | GitHub Release 页面；另含该 tag 对应的自动生成源码归档 |
+| [`project3-lora-vangogh-full.safetensors`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/project3-lora-vangogh-full.safetensors) | 完整训练的 Van Gogh LoRA adapter，6,414,448 bytes（约 6.12 MiB）；SHA256：`82b93c827e18fc4024f3bb03c87163159acc6c1c981db751c572f9f3e0bf9410` |
+| [`commit.txt`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/commit.txt) | 发布时对应的代码提交标识 |
+| [`repro_manifest.json`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/repro_manifest.json) · [仓库副本](repro_manifest.json) | 复现配置、训练环境、数据说明和 adapter 校验信息 |
+| [`repro_manifest.sha256`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/repro_manifest.sha256) · [仓库副本](repro_manifest.sha256) | SHA256 校验清单 |
+
+下载 adapter（需安装并登录 GitHub CLI）：
+
+```bash
+gh release download project3-v1.0 \
+  --repo li-cheng111/my-diffusion-models-starter \
+  --pattern project3-lora-vangogh-full.safetensors \
+  --dir projects/project3_stable_diffusion/outputs/lora/full
+sha256sum projects/project3_stable_diffusion/outputs/lora/full/project3-lora-vangogh-full.safetensors
+```
+
+将校验结果与上表 SHA256 比较即可；`repro_manifest.sha256` 中的校验路径使用仓库内标准文件名 `pytorch_lora_weights.safetensors`。
+
+基础 SD/ControlNet 权重、Hugging Face cache、20 张训练原图和临时训练 checkpoint 不应放入 Git；LoRA 发布权重通过 Release 单独分发。完整文件结构请以项目目录为准。
