@@ -1,78 +1,25 @@
 # Project 3：Stable Diffusion 实验报告
 
-> 本文将本地 README 与项目仓库的实验报告合并为一个可读、可审计的报告入口。数据口径以已提交的 AutoDL 产物、JSON/JSONL metadata 和图像为准；实验图像链接固定到提交 `6b14f26cd7ea2a67d3b231a97cde80baea636ca2`，便于核对对应快照。
-
-> 图片展示：图像直接引用上述提交中的已提交实验 PNG，不依赖额外的 `README_assets/` 目录；并列图按等宽显示，不改变原图比例。
-
-## 1. 摘要与完成度
+## 1. 实验内容
 
 本项目以 Stable Diffusion 1.5 为对象，逐段复现并检查文本到图像的 latent diffusion 路径，完成手写推理、参数扫描、VAE 解剖、LoRA 微调、Canny ControlNet、cross-attention 可视化，以及 LDM/SDXL 阅读笔记。
 
-| 原始作业模块 | 结果 | 主要证据 |
+| 作业模块 | 结果 | 相关文件 |
 |---|---|---|
 | A：不调用高层 pipeline 的手写推理 | 已完成并保留 notebook 输出 | 01_inference_walkthrough.ipynb、outputs/manual/ |
 | B：CFG、steps、sampler 对比 | 已完成 full preset，seed 42 | outputs/sweep/、metadata.json |
 | C：VAE latent 通道与重构 | 已执行，含四通道图、crop、MSE/PSNR | 05_vae_anatomy.ipynb、outputs/vae_*.png、vae_metrics.json |
-| D：LoRA 微调、分段保存、独立加载 | AutoDL RTX 4090 上完成 800 optimizer steps | outputs/lora/full/、outputs/lora/full_eval/ |
+| D：LoRA 微调、分段保存、独立加载 | 完成 800 optimizer steps | outputs/lora/full/、outputs/lora/full_eval/ |
 | E：Canny ControlNet 与 attention challenge | 四种风格、结构/文本冲突、四个 token attention map | outputs/controlnet/、outputs/attention/full/ |
 | LDM §3–4 与 SDXL 阅读笔记 | 已完成 | notes/reading_note_ldm.md、reading_notes/ldm_sdxl_reading_note.md |
-| 环境、复现与 debug | 有环境快照、运行日志、SHA256 和真实问题记录 | outputs/autodl_environment.json、logs/、本报告第 10 节 |
+| 环境、复现与 debug | 环境快照、运行日志和真实问题记录 | outputs/autodl_environment.json、logs/、本报告第 10 节 |
 
-**完成判断：**按功能、执行输出和实验图表，Project 3 的 A–E 与阅读笔记均已完成。复现时需特别留意三项边界：AutoDL 使用 ModelScope 模型镜像；LoRA 数据使用 ModelScope 镜像而非原计划的 Wikimedia Commons 原图；部分 AutoDL metadata 的 git_commit 为 null，因此当前能确认产物和运行参数，但不能从 metadata 单独证明每个运行进程对应哪个精确代码提交。
-
-### 数据口径校正
-
-合并过程中对照了本地 README、GitHub report、PNG 文件清单和 JSON metadata，并统一了以下表述：
-
-1. B 的 metadata 实际列出 **16 个 PNG 文件**，它们由 12 张单样本结果图（5 个 CFG、4 个 steps、3 个 sampler）、1 张 3×3 CFG×steps 网格、3 张汇总图组成；不是“16 张单图再加 4 张汇总图”。二维网格本身含 9 个生成样本格。
-2. C 的 AutoDL VAE 指标使用 outputs/sweep_smoke/grid_2d.png，MSE 为 0.00197918、PSNR 为 27.0351 dB。本机早期 smoke 的另一组数字不与这组 AutoDL 结果混算。
-3. LoRA 数据来源按 manifest 记为 ModelScope huggan/vangogh2photo；由于 AutoDL 访问 Wikimedia Commons 返回网络错误，不能把这 20 张镜像图描述成 Commons 原图或逐幅公有领域作品。
-4. 代码默认模型 revision 与 AutoDL 实际下载源不同：代码默认固定 Hugging Face revision；AutoDL 使用 ModelScope 的 master 镜像，并以实际权重 SHA256 辅助识别。本报告会区分二者。
-
-## 2. 环境、模型与数据
-
-### AutoDL 实测环境
-
-运行环境为 AutoDL Linux、Python 3.12.3、NVIDIA GeForce RTX 4090，显存 24 GB（metadata 记录 25,252,724,736 bytes），CUDA 12.8。依赖基线如下：
-
-| 依赖 | 版本 |
-|---|---|
-| PyTorch / torchvision | 2.8.0+cu128 / 0.23.0+cu128 |
-| Diffusers | 0.40.0 |
-| Transformers | 5.15.1 |
-| PEFT | 0.20.0 |
-| Accelerate | 1.14.0 |
-| Hugging Face Hub | 1.31.0 |
-| safetensors | 0.8.0 |
-
-requirements/project3.txt 是仓库中记录的安装基线；本机 smoke 的 torch 是 CUDA 12.6 build，不替代上述 AutoDL 实测。完整环境、时间戳、设备、模型来源和关键权重摘要见 [autodl_environment.json](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/autodl_environment.json)。
-
-### 基础模型与权重指纹
-
-代码默认模型为 stable-diffusion-v1-5/stable-diffusion-v1-5，固定 revision 451f4fe16113bff5a5d2269ed5ad43b0592e9a14。但 AutoDL 当时无法访问 Hugging Face endpoint，实际使用 ModelScope 镜像 AI-ModelScope/stable-diffusion-v1-5@master；ControlNet 使用 lllyasviel/sd-controlnet-canny 的 ModelScope 镜像。
-
-AutoDL 环境文件记录的关键权重如下：
-
-| 组件 | 大小（bytes） | SHA256 |
-|---|---:|---|
-| SD 1.5 UNet | 3,438,167,540 | 19da7aaa4b880e59d56843f1fcb4dd9b599c28a1d9d9af7c1143057c8ffae9f1 |
-| SD 1.5 VAE | 334,643,276 | a2b5134f4dbc140d9c11f11cba3233099e00af40f262f136c691fb7d38d2194c |
-| SD 1.5 text encoder | 492,265,874 | d008943c017f0092921106440254dbbe00b6a285f7883ec8ba160c3faad88334 |
-| Canny ControlNet | 1,445,157,124 | e19821a00e6d1817b37286a21d5c4f8915076949b0e81846c4f92c96ffb46db7 |
-
-镜像标签 master 本身不是不可变 revision；因此复现实验时应同时核对上表 SHA256，而不能只记录仓库名和标签。
-
-### LoRA 训练数据
-
-AutoDL 从公开 ModelScope 镜像 huggan/vangogh2photo 的 imageA 抽取 20 张图片。manifest 中记录了来源 URL、镜像 metadata 中标注的 Apache-2.0 许可、每张图片尺寸（原始样本为 256×256）与 SHA256；训练预处理再调整到 512×512。原始图像留在 AutoDL 被忽略目录 .local/datasets/project3_vangogh，没有提交到 Git。
-
-原计划的 Wikimedia Commons 下载器仍保留在代码中，但 AutoDL 请求 Commons API 时遇到 OSError: [Errno 99] Cannot assign requested address。因此实际训练集必须准确称为 ModelScope 镜像数据，许可描述也限于该镜像的 metadata。逐图清单见 [vangogh_manifest.json](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/lora/vangogh_manifest.json)。
-
-## 3. Stable Diffusion 端到端结构
+## 2. Stable Diffusion 结构
 
 文本到图像的主要张量流：
 
-**prompt → tokenizer → CLIP text encoder → text embedding；随机 latent → UNet + CFG + scheduler → 去噪 latent → VAE decoder → RGB 图像。**
+**prompt → tokenizer → CLIP text encoder → text embedding；
+随机 latent → UNet + CFG + scheduler → 去噪 latent → VAE decoder → RGB 图像。**
 
 对于 SD 1.5、512×512 输入/输出：
 
@@ -85,17 +32,11 @@ AutoDL 从公开 ModelScope 镜像 huggan/vangogh2photo 的 imageA 抽取 20 张
 | 去噪 latent | (1, 4, 64, 64) | UNet 预测与 scheduler 更新后的 latent |
 | 解码 RGB | (1, 3, 512, 512) | 解码前按 VAE scaling factor 0.18215 还原 latent 尺度 |
 
-Classifier-Free Guidance 的预测组合为：
+## 4. A：Stable Diffusion 推理框架实现
 
-**ε = ε_uncond + guidance_scale × (ε_cond − ε_uncond)**
+文件：01_inference_walkthrough.ipynb，该 notebook 逐步运行 tokenizer、CLIP、噪声初始化、DDIM、CFG、scheduler 更新和 VAE decode。
 
-其中 UNet 单次前向先处理拼接 batch，再拆分 unconditional/conditional 预测。0.18215 是 SD 1.5 VAE 的 latent scaling factor，解码时必须撤销该缩放。A/C notebook 中的中间值和 shape 输出可用于逐步核对这些接口。
-
-## 4. A：手写 Stable Diffusion 推理
-
-文件：01_inference_walkthrough.ipynb。该 notebook 逐步运行 tokenizer、CLIP、噪声初始化、DDIM、CFG、scheduler 更新和 VAE decode，不以 StableDiffusionPipeline(prompt) 取代手写推理。它保留了 AutoDL 执行计数、文本和图像输出。
-
-固定配置：prompt 为 astronaut/horse/mars 场景，negative prompt 为 low quality, blurry, distorted，seed=42，50 个 DDIM steps，CFG=7.5。中间 latent 仍为 (1,4,64,64)，最终图像为 (1,3,512,512)。
+固定配置：prompt 为 **astronaut/horse/mars** 场景，negative prompt 为 **low quality, blurry, distorted**，seed=42，50 个 DDIM steps，CFG=7.5。
 
 ### 采样过程中的 latent 统计
 
@@ -106,14 +47,12 @@ Classifier-Free Guidance 的预测组合为：
 | 24 | 501 | -0.00298 | 0.94525 | -3.60352 | 3.93555 |
 | 49 | 1 | -0.00781 | 0.80868 | -4.90625 | 5.94922 |
 
-标准差总体下降，表示 latent 的整体噪声尺度随去噪过程减小；但 min/max 不要求单调收缩，UNet 预测和 scheduler 更新会改变每个空间位置的值。反向扩散因此不是把 forward 加噪公式逐项反演。
+标准差总体下降，表示 latent 的整体噪声尺度随去噪过程减小
 
 产物：[手写推理生成图](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_seed42.png)、[latent 统计 JSON](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_stats.json)。
 
 <p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_seed42.png" alt="手写 Stable Diffusion 推理结果" width="960"></p>
-<p align="center"><strong>图 1｜手写推理生成结果</strong><br><sub>seed=42、50 DDIM steps、CFG=7.5；图像由 notebook 显式执行 tokenizer、CLIP、UNet、CFG、scheduler 和 VAE decode。</sub></p>
-
-原始图与统计：[manual_sd_seed42.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_seed42.png) · [manual_sd_stats.json](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_stats.json)
+<p align="center"><strong>图 1｜手写推理生成结果</strong><br><sub>seed=42、50 DDIM steps、CFG=7.5</sub></p>
 
 ### A 的思考题结论
 
@@ -125,20 +64,18 @@ Classifier-Free Guidance 的预测组合为：
 
 ## 5. B：CFG、steps 与 sampler 扫描
 
-脚本：02_parameter_sweep.py。full preset 在同一 prompt、negative prompt 和 seed=42 下改变一个因素或绘制二维交互图。prompt 为 “a photograph of a cat wearing a wizard hat, fantasy art”，negative prompt 为 “low quality, blurry”；输出尺寸 512×512。
+脚本：02_parameter_sweep.py。full preset 在同一 prompt、negative prompt 和 seed=42 下改变一个因素或绘制二维交互图。prompt 为 **“a photograph of a cat wearing a wizard hat, fantasy art”**，negative prompt 为 **“low quality, blurry”**；输出尺寸 512×512。
 
-| 对比 | 扫描配置 | 控制变量/图 |
+| 对比量 | 扫描配置 | 控制变量/结果图 |
 |---|---|---|
 | CFG scale | 1、3、7.5、15、25 | 其余配置固定；sweep_cfg.png |
 | inference steps | 10、20、50、100 | CFG=7.5；sweep_steps.png |
 | sampler | DDIM、Euler-A、DPM++ 2M | 30 steps、CFG=7.5；sweep_sampler.png |
 | CFG × steps | CFG=3、7.5、15 × steps=10、20、50 | 3×3 grid_2d.png |
 
-full sweep 用时 **36.642 秒**。同 seed 用于条件间对比，输出按 metadata 记录 16 个 PNG 文件：12 张独立条件结果、1 张含 9 个样本格的二维网格、3 张横向汇总图。参数扫描 metadata 同时保存 prompt、seed、依赖版本、运行时间、文件清单和每张图的 SHA256。
+输出按 metadata 记录 16 个 PNG 文件：12 张独立条件结果、1 张含 9 个样本格的二维网格、3 张横向汇总图。
 
-### 实测图与观察
-
-CFG 与 steps 的单因素对照、sampler 比较和 CFG×steps 交互网格分别排成独立图版；同一组卡片等宽、等高，便于横向比较。
+### 实测图
 
 <p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_cfg.png" alt="CFG scale 五档对照图" width="960"></p>
 <p align="center"><strong>图 2a｜CFG scale 对照</strong><br><sub>固定 prompt、seed=42 与其余设置，比较 CFG=1、3、7.5、15、25。</sub></p>
@@ -152,15 +89,13 @@ CFG 与 steps 的单因素对照、sampler 比较和 CFG×steps 交互网格分�
 <p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/grid_2d.png" alt="CFG 与 steps 的三乘三交互网格" width="960"></p>
 <p align="center"><strong>图 2d｜CFG × steps 交互</strong><br><sub>行列分别对应 CFG=3、7.5、15 与 steps=10、20、50；这是子网格，不是完整 5×4 组合。</sub></p>
 
-CFG 从 1 增至 3/7.5 后，猫和巫师帽的语义更明确；到 15/25 时颜色和边缘更强烈，出现过饱和倾向。steps 从 10 到 20 可见结构明显成形，50/100 继续细化但增益较小。以上是单一 prompt/seed 的定性观察，不是跨数据集质量评测。
+**可以看到：** CFG 从 1 增至 3/7.5 后，猫和巫师帽的语义更明确；到 15/25 时颜色和边缘更强烈，出现过饱和倾向。steps 从 10 到 20 可见结构明显成形，50/100 继续细化但增益较小。
 
-原始高清图：[sweep_cfg.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_cfg.png) · [sweep_steps.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_steps.png) · [sweep_sampler.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_sampler.png) · [grid_2d.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/grid_2d.png)
-
-程序支持 --preset smoke|full、--model_revision 与 --metadata_output。full AutoDL 运行的参数与产物清单见 [sweep metadata](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/metadata.json)。
+高清图像链接：[sweep_cfg.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_cfg.png) · [sweep_steps.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_steps.png) · [sweep_sampler.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_sampler.png) · [grid_2d.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/grid_2d.png)
 
 ## 6. C：VAE anatomy
 
-文件：05_vae_anatomy.ipynb。使用 encoder posterior 的 mode（确定性重构，而非随机采样），记录四个 latent channel、原图/重构图、局部细节 crop 和 metrics JSON。本次 AutoDL 输入为 outputs/sweep_smoke/grid_2d.png；指标张量取值范围归一化至 [0,1]。
+文件：05_vae_anatomy.ipynb。使用 encoder posterior 的 mode，记录四个 latent channel、原图/重构图、局部细节 crop 和 metrics JSON。
 
 | 张量 | shape |
 |---|---|
@@ -168,7 +103,7 @@ CFG 从 1 增至 3/7.5 后，猫和巫师帽的语义更明确；到 15/25 时�
 | latent | (1, 4, 64, 64) |
 | 重构 RGB | (1, 3, 512, 512) |
 
-**实测 MSE = 0.0019791808，PSNR = 27.0351 dB。**四个通道统计如下：
+**实测 MSE = 0.0019791808，PSNR = 27.0351 dB。** 四个通道统计如下：
 
 | latent channel | mean | std |
 |---:|---:|---:|
@@ -180,9 +115,9 @@ CFG 从 1 增至 3/7.5 后，猫和巫师帽的语义更明确；到 15/25 时�
 <p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_channels.png" alt="VAE 四个 latent 通道" width="230"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_reconstruction.png" alt="VAE 输入与重构" width="230"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_detail_crop.png" alt="VAE 局部细节" width="230"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/report/vae_statistics.png" alt="VAE 通道统计与重构指标" width="230"></p>
 <p align="center"><strong>图 3｜VAE anatomy：通道、重构与指标</strong><br><sub>A：四个 latent channel；B：输入/重构；C：局部细节；D：通道统计和 MSE/PSNR。</sub></p>
 
-原始图：[vae_channels.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_channels.png) · [vae_reconstruction.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_reconstruction.png) · [vae_detail_crop.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_detail_crop.png) · [vae_statistics.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/report/vae_statistics.png)
+原始图链接：[vae_channels.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_channels.png) · [vae_reconstruction.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_reconstruction.png) · [vae_detail_crop.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_detail_crop.png) · [vae_statistics.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/report/vae_statistics.png)
 
-**结果解释：**低频色彩和整体形状较容易保留，细小文字、锐利边缘和高频纹理会平滑；VAE 是降低空间计算成本的压缩环节，也构成最终细节的信息瓶颈。当前指标只针对一张由 smoke 生成的合成网格图，不能当作在大规模自然图像验证集上的 VAE 通用质量结论。本机早期 smoke 的 MSE/PSNR 是另一运行环境和输入，不纳入 AutoDL 结果表。
+**结果解释：** 低频色彩和整体形状较容易保留，细小文字、锐利边缘和高频纹理会平滑。VAE 是降低空间计算成本的压缩环节，也构成最终细节的信息瓶颈。
 
 ## 7. D：LoRA 风格微调与独立加载
 
@@ -194,35 +129,22 @@ CFG 从 1 增至 3/7.5 后，猫和巫师帽的语义更明确；到 15/25 时�
 - rank=8、alpha=8；LoRA master 参数保持 FP32，前向采用 FP16 autocast/GradScaler。
 - 输入训练分辨率 512×512，batch size=1，AdamW，learning rate=1e-4，800 optimizer steps，seed=42。
 - 开启 gradient checkpointing，max_grad_norm=1.0；每 200 步保存 adapter checkpoint、验证图和 JSONL 训练记录。
-- 数据集共 20 张镜像图，训练 instance prompt 为 “a painting in the style of van gogh”。
+- 数据集共 20 张镜像图，训练 instance prompt 为 **“a painting in the style of van gogh”。**
 
-训练耗时 **209.47 秒**。loss 从初始 **0.2810367** 到最后一步 **0.1527308**；最后 50 步均值 **0.2282097**。单步 loss 在 batch=1 且 timestep/噪声随机时波动很大，所以用滑动均值和固定 prompt/seed 的图像一起判断。800 步训练没有 NaN/Inf；adapter 文件大小 **6,414,448 bytes（约 6.41 MB）**。
+### LoRA评估
 
-<p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/report/lora_loss_curve.png" alt="LoRA 训练 loss 与检查点" width="960"></p>
-<p align="center"><strong>图 4a｜LoRA 训练损失</strong><br><sub>单步噪声预测 MSE、50-step 均值，以及 200/400/600/800-step checkpoints。</sub></p>
-
-原始图：[lora_loss_curve.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/report/lora_loss_curve.png)
-
-均值曲线有起伏而非逐步单调下降；损失下降是优化信号，不等于风格泛化的定量指标。
-
-### 独立加载评估
-
-evaluate_lora.py 在全新 SD pipeline 中评估 base、checkpoint-0200、0400、0600、0800。比较使用 seed=42、20 inference steps、CFG=7.5，四个 prompt 是 lighthouse by the sea、quiet street at night、vase of sunflowers、mountain landscape，均使用 sks style token；因此得到 5 个模型状态 × 4 个固定 prompt 的 20 张对比图。另有训练过程使用的两条 validation prompts：landscape 与 vase of sunflowers。
+evaluate_lora.py 在 SD pipeline 中评估 base、checkpoint-0200、0400、0600、0800。比较使用 seed=42、20 inference steps、CFG=7.5，四个 prompt 是 **lighthouse by the sea、quiet street at night、vase of sunflowers、mountain landscape**，因此得到 5 个模型状态 × 4 个固定 prompt 的 20 张对比图。
 
 <p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/lora/full_eval/lora_before_after.png" alt="LoRA 四组 prompt 与五个模型状态对比" width="960"></p>
 <p align="center"><strong>图 4b｜LoRA adapter 独立加载对照</strong><br><sub>列为 base、200、400、600、800 steps；行对应 lighthouse、street、sunflowers、mountain。</sub></p>
 
 原始图：[lora_before_after.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/lora/full_eval/lora_before_after.png)
 
-这组对比证明 adapter 能从保存文件重新加载且输出与 base 不同；风格变化应结合 200/400/600/800 checkpoint 图观察。它是小数据、小样本的定性对比，不代表对任意 prompt 的稳定风格迁移。
-
-**重载实现注意：**本次保存的是 UNet-only safetensors。直接调用 pipeline adapter loader 可能因 keys 缺少 unet. 前缀而静默忽略权重；正确方式是通过 unet.load_lora_adapter(..., prefix=None, weight_name=...) 明确加载。该问题曾导致 adapter 输出与 base 的 SHA256 完全相同，修复后重新加载评估图有可解释变化。详细配置和 summary 在 [training_summary.json](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/lora/full/training_summary.json) 与 [evaluation metadata](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/lora/full_eval/metadata.json)。
-
 ## 8. E：Canny ControlNet 与 cross-attention
 
 ### 8.1 Canny ControlNet
 
-文件：04_controlnet_demo.ipynb。输入图先用 Canny 提取边缘（thresholds=[100, 200]），然后固定结构，使用四种 prompt 做重绘；另加要求 “a realistic golden retriever dog, high detail” 的冲突 prompt，观察文本与边缘条件争夺控制权。生成 seed=42。
+文件：04_controlnet_demo.ipynb。输入图先用 Canny 提取边缘（thresholds=[100, 200]），然后固定结构，使用四种 prompt 做重绘；另加要求 **“a realistic golden retriever dog, high detail”** 的冲突 prompt，观察文本与边缘条件争夺控制权。生成 seed=42。
 
 四种风格 prompt 为现代油画、漫画、赛博朋克角色、Pixar 3D 渲染，分别保存结果并组合成网格：
 
@@ -231,18 +153,16 @@ evaluate_lora.py 在全新 SD pipeline 中评估 base、checkpoint-0200、0400�
 
 原始图：[control_input_and_canny.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/control_input_and_canny.png) · [controlnet_grid.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/controlnet_grid.png) · [controlnet_conflict_dog_on_same_edges.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/controlnet_conflict_dog_on_same_edges.png)
 
-metadata 中的逐图 SHA256 及 prompt/阈值见 [controlnet metadata](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/metadata.json)。原理上，ControlNet 从冻结的 SD 主干复制条件分支，并用 zero-convolution 注入 residual；零初始化令训练开始时条件 residual 为零，减少对原模型输出的突变。训练后条件分支逐步学会通过边缘结构调节生成内容。冲突试验的意义是观察结构条件和文本语义的权衡，不预设其中某一条件总会胜出。
-
 ### 8.2 Cross-attention challenge
 
-脚本：06_cross_attention_visualization.py。prompt 为 “a red cat wearing a blue wizard hat in a green forest”，seed=42、30 steps、CFG=7.5。自定义 attention processor 在 CFG 条件分支采集 prompt 相关 attention，在去噪中后段聚合 16×16 和 32×32 query map，并排除 BOS、EOS 及 padding token。有效 token 为 cat、wizard、hat、forest，token indices 分别是 3、7、8、12；metadata 记录了 32 个 attention 模块名、两种空间分辨率、token IDs 与各输出 SHA256。本次记录耗时 9.031 秒。
+脚本：06_cross_attention_visualization.py。prompt 为 **“a red cat wearing a blue wizard hat in a green forest”**，seed=42、30 steps、CFG=7.5。自定义 attention processor 在 CFG 条件分支采集 prompt 相关 attention，在去噪中后段聚合 16×16 和 32×32 query map，并排除 BOS、EOS 及 padding token。
+
+有效 token 为 cat、wizard、hat、forest，token indices 分别是 3、7、8、12；metadata 记录了 32 个 attention 模块名、两种空间分辨率、token IDs。
 
 <p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/generated.png" alt="Cross-attention 生成图" width="180"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_03_cat_w.png" alt="cat token attention map" width="180"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_07_wizard_w.png" alt="wizard token attention map" width="180"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_08_hat_w.png" alt="hat token attention map" width="180"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_12_forest_w.png" alt="forest token attention map" width="180"></p>
 <p align="center"><strong>图 5b｜Cross-attention token 空间响应</strong><br><sub>生成图与四个有效 token map；热图是模型响应可视化，并非像素级分割真值。</sub></p>
 
-原始图：[generated.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/generated.png) · [attention_03_cat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_03_cat_w.png) · [attention_07_wizard_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_07_wizard_w.png) · [attention_08_hat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_08_hat_w.png) · [attention_12_forest_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_12_forest_w.png)
-
-热力图是 token 到空间位置响应的可视化，不是像素级语义分割真值；低分辨率 query map 经插值叠加后只能解释模型注意区域的大致位置。相关原始结果与采集配置见 [attention metadata](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/metadata.json)。
+原始图链接：[generated.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/generated.png) · [attention_03_cat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_03_cat_w.png) · [attention_07_wizard_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_07_wizard_w.png) · [attention_08_hat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_08_hat_w.png) · [attention_12_forest_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_12_forest_w.png)
 
 ## 9. LDM 与 SDXL 阅读笔记
 
