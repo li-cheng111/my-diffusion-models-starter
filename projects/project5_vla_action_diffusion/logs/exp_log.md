@@ -13,7 +13,7 @@
 | 日期 | 2026-09-14（Asia/Shanghai） |
 | 硬件 | AutoDL NVIDIA GeForce RTX 4090 24GB，16 vCPU，120GB RAM |
 | 软件 | Ubuntu 22.04.5，Python 3.12.3，PyTorch 2.8.0+cu128，CUDA 可用 |
-| 仓库 | `https://github.com/li-cheng111/diffusion-models-starter` |
+| 仓库 | `https://github.com/li-cheng111/my-diffusion-models-starter` |
 | 分支 | `codex/project5-vla-action-diffusion` |
 | 训练 seed | 42 |
 | 评估 seed | 10000–10099（100 episodes） |

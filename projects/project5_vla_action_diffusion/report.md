@@ -8,10 +8,10 @@
 
 ### 1.1 环境与动作块
 
-任务要求智能体根据图像观测移动到目标位置，并避开障碍物。单步动作是环境坐标系中的二维位移：
+任务要求智能体根据图像观测移动到目标位置，并避开障碍物。策略输出归一化二维动作，环境按 `ACTION_SCALE=0.05` 将其转换为位置增量：
 
 $$
-a_t=(\Delta x_t,\Delta y_t)\in[-0.1,0.1]^2.
+a_t\in[-1,1]^2,\qquad \Delta p_t=0.05a_t.
 $$
 
 策略不只预测下一步，而是生成长度为 $H$ 的动作块：
@@ -100,7 +100,7 @@ $$
 | 专家数据 | 1,000 条成功轨迹                                                 |
 | 随机种子 | 训练 seed=42；评估 episode seeds=10000–10099                     |
 | 训练预算 | 每个公平对照配置 10,000 optimizer steps，batch size=256              |
-| 优化器  | Adam，learning rate=$10^{-3}$，weight decay=0，EMA decay=0.999 |
+| 优化器  | AdamW，learning rate=$10^{-3}$，weight decay=0，EMA decay=0.999 |
 | 推理设置 | DDIM 20 步；FM-Euler 10 步；闭环 `exec_steps=4`                   |
 | 软件环境 | Python 3.12.3、PyTorch 2.8.0+cu128；AutoDL GPU 环境             |
 
