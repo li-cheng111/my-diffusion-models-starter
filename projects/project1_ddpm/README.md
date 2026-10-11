@@ -265,39 +265,9 @@ seed46 = 15.2086
  继续优化到 R5 达到 15.4385；
 - schedule 优劣依赖模型、loss、采样端点、EMA 和训练预算，不能脱离这些条件说 linear 或 cosine 永远更好。
 
-## 十、复现与文件说明
+## 十、补充文件说明
 
-### 10.1 训练和评估入口
-
-在 projects/project1_ddpm/ 中安装依赖并准备数据后，基础 MNIST 可运行：
-
-~~~bash
-python train.py --config configs/mnist.yaml
-python sample.py --ckpt runs/exp_mnist_baseline/ckpt/final.pt --num_samples 64 --save_grid
-~~~
-
-CIFAR-10 正式评估使用：
-
-~~~bash
-python evaluate.py \
-  --ckpt runs/fid15_r5_late_decay/ckpt/final.pt \
-  --num_samples 5000 \
-  --batch_size 64 \
-  --real_split train \
-  --seed 44 \
-  --compare_ema \
-  --clip_denoised \
-  --data_root ./data
-~~~
-
-挑战档重新编排命令：
-
-~~~bash
-python challenge.py run --schedules linear cosine --seeds 42 43 44 --output_root runs/challenge_repro
-python challenge.py summarize --output_root runs/challenge_repro
-~~~
-
-### 10.2 仓库中的非 Markdown 结果材料
+### 10.1 仓库中的结果材料
 
 - schedule.py、diffusion.py、dataset.py、train.py、sample.py、evaluate.py：核心代码；
 - model/、configs/、tests/：模型、配置和测试源码；
@@ -312,7 +282,7 @@ python challenge.py summarize --output_root runs/challenge_repro
 - results/fid15_lr5e5_full/、results/lr25_200ep/：两组完整学习率复核；
 - 各结果目录中的 .txt、.csv、.png、.yaml 保留原始数值、曲线、样本网格和实际配置。
 
-### 10.3 GitHub Release 大文件
+### 10.2 GitHub Release 大文件
 
 大型 checkpoint 不进入普通 Git，统一保存在
 [challenge-v1 Release](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1)，
