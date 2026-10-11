@@ -112,7 +112,14 @@
 | 3 | 0.14115 | 0.59798 |
 | 4 | -0.17118 | 0.73707 |
 
-<p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_channels.png" alt="VAE 四个 latent 通道" width="230"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_reconstruction.png" alt="VAE 输入与重构" width="230"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_detail_crop.png" alt="VAE 局部细节" width="230"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/report/vae_statistics.png" alt="VAE 通道统计与重构指标" width="230"></p>
+<p align="center"><a href="outputs/vae_channels.png"><img src="outputs/vae_channels.png" alt="VAE 四个 latent 通道" width="960"></a><br><strong>A · 四个 latent 通道</strong></p>
+<table>
+  <tr>
+    <td align="center" width="33%"><a href="outputs/vae_reconstruction.png"><img src="outputs/vae_reconstruction.png" alt="VAE 输入与重构" width="300"></a><br><strong>B · 输入与重构对比</strong></td>
+    <td align="center" width="33%"><a href="outputs/vae_detail_crop.png"><img src="outputs/vae_detail_crop.png" alt="VAE 局部细节" width="300"></a><br><strong>C · 局部细节</strong></td>
+    <td align="center" width="33%"><a href="outputs/report/vae_statistics.png"><img src="outputs/report/vae_statistics.png" alt="VAE 通道统计与重构指标" width="300"></a><br><strong>D · 通道统计与重构指标</strong></td>
+  </tr>
+</table>
 <p align="center"><strong>图 3｜VAE anatomy：通道、重构与指标</strong><br><sub>A：四个 latent channel；B：输入/重构；C：局部细节；D：通道统计和 MSE/PSNR。</sub></p>
 
 原始图链接：[vae_channels.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_channels.png) · [vae_reconstruction.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_reconstruction.png) · [vae_detail_crop.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_detail_crop.png) · [vae_statistics.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/report/vae_statistics.png)
@@ -148,8 +155,19 @@ evaluate_lora.py 在 SD pipeline 中评估 base、checkpoint-0200、0400、0600�
 
 四种风格 prompt 为现代油画、漫画、赛博朋克角色、Pixar 3D 渲染，分别保存结果并组合成网格：
 
-<p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/control_input_and_canny.png" alt="ControlNet 输入与 Canny 边缘" width="300"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/controlnet_grid.png" alt="ControlNet 四种风格结果" width="300"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/controlnet_conflict_dog_on_same_edges.png" alt="ControlNet 结构与文本冲突实验" width="300"></p>
-<p align="center"><strong>图 5a｜Canny ControlNet 条件实验</strong><br><sub>A：输入/Canny；B：四种风格；C：结构与 golden retriever 文本冲突；统一 seed=42。</sub></p>
+<p align="center"><a href="outputs/controlnet/control_input_and_canny.png"><img src="outputs/controlnet/control_input_and_canny.png" alt="输入图与 Canny 边缘" width="720"></a><br><strong>A · 输入图与 Canny 边缘</strong></p>
+<table>
+  <tr>
+    <td align="center" width="50%"><a href="outputs/controlnet/controlnet_prompt_00.png"><img src="outputs/controlnet/controlnet_prompt_00.png" alt="现代油画风格 ControlNet 结果" width="460"></a><br><strong>B · 现代油画</strong></td>
+    <td align="center" width="50%"><a href="outputs/controlnet/controlnet_prompt_01.png"><img src="outputs/controlnet/controlnet_prompt_01.png" alt="漫画风格 ControlNet 结果" width="460"></a><br><strong>C · 漫画</strong></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%"><a href="outputs/controlnet/controlnet_prompt_02.png"><img src="outputs/controlnet/controlnet_prompt_02.png" alt="赛博朋克风格 ControlNet 结果" width="460"></a><br><strong>D · 赛博朋克</strong></td>
+    <td align="center" width="50%"><a href="outputs/controlnet/controlnet_prompt_03.png"><img src="outputs/controlnet/controlnet_prompt_03.png" alt="Pixar 3D 风格 ControlNet 结果" width="460"></a><br><strong>E · Pixar 3D</strong></td>
+  </tr>
+</table>
+<p align="center"><a href="outputs/controlnet/controlnet_conflict_dog_on_same_edges.png"><img src="outputs/controlnet/controlnet_conflict_dog_on_same_edges.png" alt="固定边缘与 golden retriever prompt 冲突实验" width="460"></a><br><strong>F · 固定边缘与 golden retriever 文本冲突</strong></p>
+<p align="center"><strong>图 5a｜Canny ControlNet 条件实验</strong><br><sub>A：输入与边缘图；B–E：四种风格 prompt；F：结构/文本冲突。统一 seed=42。</sub></p>
 
 原始图：[control_input_and_canny.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/control_input_and_canny.png) · [controlnet_grid.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/controlnet_grid.png) · [controlnet_conflict_dog_on_same_edges.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/controlnet_conflict_dog_on_same_edges.png)
 
@@ -159,8 +177,17 @@ evaluate_lora.py 在 SD pipeline 中评估 base、checkpoint-0200、0400、0600�
 
 有效 token 为 cat、wizard、hat、forest，token indices 分别是 3、7、8、12；metadata 记录了 32 个 attention 模块名、两种空间分辨率、token IDs。
 
-<p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/generated.png" alt="Cross-attention 生成图" width="180"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_03_cat_w.png" alt="cat token attention map" width="180"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_07_wizard_w.png" alt="wizard token attention map" width="180"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_08_hat_w.png" alt="hat token attention map" width="180"> <img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_12_forest_w.png" alt="forest token attention map" width="180"></p>
-<p align="center"><strong>图 5b｜Cross-attention token 空间响应</strong><br><sub>生成图与四个有效 token map；热图是模型响应可视化，并非像素级分割真值。</sub></p>
+<table>
+  <tr>
+    <td align="center" width="50%"><a href="outputs/attention/full/attention_03_cat_w.png"><img src="outputs/attention/full/attention_03_cat_w.png" alt="生成图与 cat token attention map" width="480"></a><br><strong>A · cat</strong></td>
+    <td align="center" width="50%"><a href="outputs/attention/full/attention_07_wizard_w.png"><img src="outputs/attention/full/attention_07_wizard_w.png" alt="生成图与 wizard token attention map" width="480"></a><br><strong>B · wizard</strong></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%"><a href="outputs/attention/full/attention_08_hat_w.png"><img src="outputs/attention/full/attention_08_hat_w.png" alt="生成图与 hat token attention map" width="480"></a><br><strong>C · hat</strong></td>
+    <td align="center" width="50%"><a href="outputs/attention/full/attention_12_forest_w.png"><img src="outputs/attention/full/attention_12_forest_w.png" alt="生成图与 forest token attention map" width="480"></a><br><strong>D · forest</strong></td>
+  </tr>
+</table>
+<p align="center"><strong>图 5b｜Cross-attention token 空间响应</strong><br><sub>每格左侧是同一生成图，右侧是对应 token 的 attention map；热图表示模型响应，不是像素级分割真值。</sub></p>
 
 原始图链接：[generated.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/generated.png) · [attention_03_cat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_03_cat_w.png) · [attention_07_wizard_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_07_wizard_w.png) · [attention_08_hat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_08_hat_w.png) · [attention_12_forest_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_12_forest_w.png)
 
