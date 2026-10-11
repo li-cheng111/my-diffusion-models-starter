@@ -1,10 +1,6 @@
-# 项目 2：采样器对比
+# Project 2: 采样器对比 (DDIM / DPM-Solver / Euler) 实验报告
 
-本目录包含完整的项目 2 实现。代码从课程 starter 的
-`774d640f3915c3396e034068beff318fbf421719` 提交导入，并适配到本仓库的
-monorepo 目录结构。
-
-实现不重新训练，直接复用项目 1 已训练的 epsilon 预测模型，并完成：
+直接复用项目 1 已训练的 epsilon 预测模型，并完成：
 
 - DDPM ancestral sampling 1000 NFE 基线；
 - 支持任意跳步和 `eta` 随机性的 DDIM；
@@ -18,9 +14,6 @@ monorepo 目录结构。
 项目 1 位于 `projects/project1_ddpm/`。`project1_path.py` 优先检查同级项目目录，并导入其中的
 `schedule.py`、`dataset.py` 和 `model/` 包。
 
-本目录下不得放置 `.git` 目录。模型 checkpoint、数据集、Inception 权重和
-缓存均会被忽略。只提交源码、配置、JSON 测量结果、整理后的图表/样本网格、
-日志和报告。
 
 正式实验使用 linear 调度策略的随机种子 44 EMA 模型。checkpoint 应放在 Git 仓库
 之外，例如：
