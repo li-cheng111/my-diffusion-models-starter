@@ -220,7 +220,7 @@ evaluate_lora.py 在 SD pipeline 中评估 base、checkpoint-0200、0400、0600�
 | C · VAE 解剖 | [`05_vae_anatomy.ipynb`](05_vae_anatomy.ipynb) | `outputs/vae_*.png`、[`outputs/vae_metrics.json`](outputs/vae_metrics.json) |
 | D · LoRA 训练与评估 | [`03_lora_finetune.py`](03_lora_finetune.py)、[`evaluate_lora.py`](evaluate_lora.py) | [`outputs/lora/full/`](outputs/lora/full/)、[`outputs/lora/full_eval/`](outputs/lora/full_eval/) |
 | E · ControlNet 与 cross-attention | [`04_controlnet_demo.ipynb`](04_controlnet_demo.ipynb)、[`06_cross_attention_visualization.py`](06_cross_attention_visualization.py) | [`outputs/controlnet/`](outputs/controlnet/)、[`outputs/attention/`](outputs/attention/) |
-| 环境、实验日志与阅读笔记 | [`outputs/autodl_environment.json`](outputs/autodl_environment.json)、[`logs/`](logs/)、[`notes/`](notes/)、[`reading_notes/`](reading_notes/) | AutoDL 环境、实验配置、运行记录及论文阅读笔记 |
+| 环境、实验日志与阅读笔记 | [`outputs/autodl_environment.json`](outputs/autodl_environment.json)、[`logs/`](logs/)、[`notes/`](notes/)、[`reading_notes/`](reading_notes/) | 实验环境、实验配置、运行记录及论文阅读笔记 |
 | 报告图 | [`make_report_figures.py`](make_report_figures.py) | [`outputs/report/`](outputs/report/)；其他插图直接引用已提交的实验 PNG |
 
 ### GitHub Release
@@ -228,21 +228,6 @@ evaluate_lora.py 在 SD pipeline 中评估 base、checkpoint-0200、0400、0600�
 | 发布内容 | 说明 |
 | --- | --- |
 | [Project3 reproducibility v1.0 · `project3-v1.0`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project3-v1.0) | GitHub Release 页面；另含该 tag 对应的自动生成源码归档 |
-| [`project3-lora-vangogh-full.safetensors`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/project3-lora-vangogh-full.safetensors) | 完整训练的 Van Gogh LoRA adapter，6,414,448 bytes（约 6.12 MiB）；SHA256：`82b93c827e18fc4024f3bb03c87163159acc6c1c981db751c572f9f3e0bf9410` |
+| [`project3-lora-vangogh-full.safetensors`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/project3-lora-vangogh-full.safetensors) | 完整训练的 Van Gogh LoRA adapter，6,414,448 bytes（约 6.12 MiB） |
 | [`commit.txt`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/commit.txt) | 发布时对应的代码提交标识 |
 | [`repro_manifest.json`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/repro_manifest.json) · [仓库副本](repro_manifest.json) | 复现配置、训练环境、数据说明和 adapter 校验信息 |
-| [`repro_manifest.sha256`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project3-v1.0/repro_manifest.sha256) · [仓库副本](repro_manifest.sha256) | SHA256 校验清单 |
-
-下载 adapter（需安装并登录 GitHub CLI）：
-
-```bash
-gh release download project3-v1.0 \
-  --repo li-cheng111/my-diffusion-models-starter \
-  --pattern project3-lora-vangogh-full.safetensors \
-  --dir projects/project3_stable_diffusion/outputs/lora/full
-sha256sum projects/project3_stable_diffusion/outputs/lora/full/project3-lora-vangogh-full.safetensors
-```
-
-将校验结果与上表 SHA256 比较即可；`repro_manifest.sha256` 中的校验路径使用仓库内标准文件名 `pytorch_lora_weights.safetensors`。
-
-基础 SD/ControlNet 权重、Hugging Face cache、20 张训练原图和临时训练 checkpoint 不应放入 Git；LoRA 发布权重通过 Release 单独分发。完整文件结构请以项目目录为准。
