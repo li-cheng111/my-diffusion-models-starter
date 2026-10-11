@@ -46,7 +46,3 @@ SDXL 不只是增大 SD 1.5 的 UNet，还使用两个 CLIP text encoder、拼�
 2. D 的 LoRA 只修改 UNet attention projection，在固定 VAE/text interface 上学习低秩风格偏移。
 3. E 的 attention challenge 直接观察 $QK^{\top}$ 对 token 的空间响应。
 4. B、C 的结果说明 sampler、VAE 压缩和 latent scaling 都会影响最终图片，单 prompt 图片不能等价为 FID 结论。
-
-## 局限与复现实验问题
-
-论文指标依赖大规模数据、特定 VAE 和采样器；课程实验应报告 seed、model revision、scheduler、prompt、运行环境和产物 SHA256，并区分本机 smoke 与 AutoDL full run。
