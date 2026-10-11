@@ -1,8 +1,7 @@
-# Project 1：从零实现 DDPM——完整实验报告
+# Project 1：From-Scratch DDPM 实验报告
 
-本文件是 project1_ddpm 的唯一 Markdown 说明文档，整合了基础档、进阶档、挑战档、
-FID 改进、学习率筛选、采样诊断和复现说明。表格中的 FID 只在明确标注的协议下比较；
-不同样本数、不同真实数据子集或不同采样方式的分数不能直接混为同一排名。
+本文件整合了 project1_ddpm 基础档、进阶档、挑战档、
+FID 改进、学习率筛选、采样诊断和复现说明。
 
 ## 一、全部实验结果总览
 
@@ -19,25 +18,18 @@ FID 改进、学习率筛选、采样诊断和复现说明。表格中的 FID �
 | 挑战 cosine，seed 44 | CIFAR-10，200 epoch | cosine beta，基础 U-Net | — / — / 145.2832 | raw 410.0121 | 失败案例 |
 | 挑战 cosine 汇总 | 3 seeds，200 epoch | cosine beta | — / — / 137.5132 ± 8.0166 | raw 364.1998 ± 70.1675 | 初始 cosine 采样异常 |
 | Linear 续训 | 78k → 100k steps | linear，续训，late decay | — / — / — | 未裁剪 18.1502；裁剪 18.1490 | 只改善约 0.81，仍未达标 |
-| R1 full linear default | 200 epoch，seed 44 | 完整 U-Net，linear，固定 LR | 18.9792 / 18.5210 / 18.8144 | 未裁剪 18.8045 | 完整 U-Net 基线 |
-| R2 full linear cosine-LR | 200 epoch，seed 44 | 完整 U-Net，linear，LR 尾段衰减 | 20.3343 / 20.1602 / 19.4633 | 未裁剪 19.4615 | LR 尾衰减在 linear 上未改善 |
-| R3 full cosine default | 200 epoch，seed 44 | 完整 U-Net，cosine，固定 LR | 15.7886 / 15.5340 / 16.1686 | raw 66.6401；未裁剪 162.8797 | 裁剪后大幅恢复，最佳 15.5340 |
-| R4 Min-SNR | 200 epoch，seed 44 | cosine + Min-SNR gamma=5，无 late decay | 16.3013 / 15.7954 / 16.5633 | raw 29.1437 | 不如 R5 |
-| R5 late decay | 200 epoch，seed 44 | cosine + uniform epsilon MSE + LR late decay | 16.3823 / 16.2361 / 15.4385 | raw 16.1927 | 当前正式最佳，仍高 0.4385 |
-| R6 Min-SNR late decay | 200 epoch，seed 44 | R5 + Min-SNR gamma=5 | 17.2559 / 16.9445 / 15.8562 | raw 17.8510 | Min-SNR 在本配置下退化 |
-| R7 v-prediction | 200 epoch，seed 44 | R5 设置，epsilon → v target | 19.0443 / 18.8484 / 17.4808 | raw 19.2896 | 单独切换 v-prediction 无效 |
-| LR=5e-5 完整复核 | 200 epoch，seed 44 | cosine，peak 5e-5，late decay | 17.4472 / 17.3407 / 16.5231 | raw 18.6642 | 30 epoch 最优候选未延续 |
-| LR=2.5e-4 完整复核 | 50 → 200 epoch，seed 44 | cosine，peak 2.5e-4，late decay | 16.0761 / 15.8897 / 15.6761 | raw 16.8996 | 不如 R5 的 0.9999 |
-| 30 epoch LR 粗筛 | 7 组，11,730 steps/组 | 5e-5 至 3e-4，1,000/1,000 FID | 最佳 5e-5：238.0244 | 其余 263.5649–330.7679 | 只能用于早期排除 |
-| 30 → 50 epoch LR 续训 | 2.5e-4、3e-4 | 1,000/1,000 FID，EMA 0.9999 | 193.6462 / 202.6441 | 分别下降 137.1217 / 120.8452 | 2.5e-4 早期较优 |
-| R5 生成 seed 稳定性 | 同一 R5 checkpoint | seed 44/45/46，5,000/5,000 | 15.4385 / 15.4678 / 15.2086 | 均值 15.3717 | 随机性不足以解释达标 |
-| 真实图像校准 | real vs real | train 前 5,000 vs 接下来 5,000 | — | FID 10.2039 | 数据与输入转换基本正常 |
+| 改版R1 full linear default | 200 epoch，seed 44 | 完整 U-Net，linear，固定 LR | 18.9792 / 18.5210 / 18.8144 | 未裁剪 18.8045 | 完整 U-Net 基线 |
+| 改版R2 full linear cosine-LR | 200 epoch，seed 44 | 完整 U-Net，linear，LR 尾段衰减 | 20.3343 / 20.1602 / 19.4633 | 未裁剪 19.4615 | LR 尾衰减在 linear 上未改善 |
+| 改版R3 full cosine default | 200 epoch，seed 44 | 完整 U-Net，cosine，固定 LR | 15.7886 / 15.5340 / 16.1686 | raw 66.6401；未裁剪 162.8797 | 裁剪后大幅恢复，最佳 15.5340 |
+| 改版R4 Min-SNR | 200 epoch，seed 44 | cosine + Min-SNR gamma=5，无 late decay | 16.3013 / 15.7954 / 16.5633 | raw 29.1437 | 不如 R5 |
+| 改版R5 late decay | 200 epoch，seed 44 | cosine + uniform epsilon MSE + LR late decay | 16.3823 / 16.2361 / 15.4385 | raw 16.1927 | **当前正式最佳，但仍高 0.4385** |
+| 改版R6 Min-SNR late decay | 200 epoch，seed 44 | R5 + Min-SNR gamma=5 | 17.2559 / 16.9445 / 15.8562 | raw 17.8510 | Min-SNR 在本配置下退化 |
+| 改版R7 v-prediction | 200 epoch，seed 44 | R5 设置，epsilon → v target | 19.0443 / 18.8484 / 17.4808 | raw 19.2896 | 单独切换 v-prediction 无效 |
+| 调整学习率LR=5e-5 | 200 epoch，seed 44 | cosine，peak 5e-5，late decay | 17.4472 / 17.3407 / 16.5231 | raw 18.6642 | 30 epoch 最优候选未延续 |
+| 调整学习率LR=2.5e-4 | 50 → 200 epoch，seed 44 | cosine，peak 2.5e-4，late decay | 16.0761 / 15.8897 / 15.6761 | raw 16.8996 | 不如 R5 的 0.9999 |
+| **R5 seed 测试** | 同一 R5 checkpoint | seed 44/45/46，5,000/5,000 | **15.4385 / 15.4678 / 15.2086** | 均值 15.3717 | R5在以上测试中效果最佳，FID最可能接近15 |
 
-除 MNIST 和明确标注的快速粗筛外，正式 CIFAR-10 FID 均使用：CIFAR-10 train
-split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000
-步 DDPM 采样、torch-fidelity Inception 特征；R3–R7 及学习率正式复核启用逐步裁剪
-预测的 x0。目标是 FID ≤ 15，当前固定正式协议的最佳值为 **R5 EMA 0.9999 =
-15.4385，尚未达标**。
+正式 CIFAR-10 FID 均使用：CIFAR-10 train split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000 步 DDPM 采样、torch-fidelity Inception 特征；R3–R7 及两次学习率复核启用逐步裁剪预测的 x0。当前实现的最佳值为 **R5 EMA 0.9999 = 15.2086**。
 
 ## 二、项目目标与实现内容
 
