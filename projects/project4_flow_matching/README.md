@@ -1,14 +1,11 @@
 # Project 4：CIFAR-10 Flow Matching
 
 本项目在 CIFAR-10 上训练 Rectified Flow 图像生成模型，实现 Euler、Heun 和
-Classifier-Free Guidance（CFG）采样，并用 FID 与 Project 1 的 DDIM 基线比较。
-当前可复现版本为 **v2**：无条件模型 FM-U 与类别条件模型 FM-C 均已训练 200K 步，
-权重和完整评测归档发布在 [GitHub Release `project4-v2.0`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v2.0)。
+Classifier-Free Guidance（CFG）采样，并用 FID 与 Project 1 的 DDIM 基线比较。v2版本里无条件模型 FM-U 与类别条件模型 FM-C 均已训练 200K 步，权重和完整评测归档发布在 [GitHub Release `project4-v2.0`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v2.0)。
 
-> 仓库还保留 v1 的配置、结果和复现清单，供历史参考。本文的复现命令、主结果和结论
-> 均以 v2 为准；v1 指标不是 v2 实验的一部分，也不用于下文的 DDIM 对比。
+> 仓库还保留 v1 的配置、结果和复现清单，供历史参考。
 
-## 方法与模型
+## 一、方法与模型
 
 线性路径从标准高斯噪声 `epsilon` 插值到数据图像 `x1`：
 
@@ -29,21 +26,6 @@ $$
 
 两组模型都是 DiT-S，32.62M 参数，连续时间嵌入尺度为 1000。null token 的类别索引为
 10（CIFAR-10 的 10 个类别索引为 0–9）。
-
-## 代码与结果文件
-
-| 路径 | 内容 |
-|---|---|
-| [`train.py`](train.py) | 训练、EMA、checkpoint 保存与恢复 |
-| [`sample.py`](sample.py) | Euler / Heun 图像采样与 CFG |
-| [`eval_fid.py`](eval_fid.py) | FID 与 NFE 扫描，输出评测 JSON |
-| [`plot_nfe_curve.py`](plot_nfe_curve.py) | 由评测结果绘制 NFE–FID 曲线 |
-| [`export_checkpoint.py`](export_checkpoint.py) | 将续训 checkpoint 导出为推理权重 |
-| [`model/dit.py`](model/dit.py)、[`model/unet.py`](model/unet.py) | DiT 与简化 conditional U-Net |
-| [`results/fm_v2_unconditional_solvers.json`](results/fm_v2_unconditional_solvers.json) | FM-U Euler / Heun 的原始 FID 结果 |
-| [`results/fm_v2_conditional_cfg.json`](results/fm_v2_conditional_cfg.json) | FM-C CFG 扫描的原始 FID 结果 |
-| [`results/nfe_fid_curve_v2.png`](results/nfe_fid_curve_v2.png) | FM 与 Project 1 DDIM 的 NFE–FID 曲线 |
-| [`repro_manifest_v2.json`](repro_manifest_v2.json) | 软硬件、配置、数据、权重哈希和评测协议 |
 
 ## 环境、数据与训练
 
@@ -217,13 +199,18 @@ Project 1 R5 U-Net；训练架构与预算并未控制一致。每项只有 seed
 
 ![FM-C 类别条件样本网格](samples/fm_v2_conditional/class_0/euler_nfe20_cfg_cfg3.0_EMA_0.9999.png)
 
-## 历史记录与限制
+## 代码与结果文件说明
 
-原 `logs/exp_log.md` 记录的是早期 v1 训练（RTX 4090、batch size 128、200K 步、约 6 小时
-18 分钟、最终 loss 0.1676）；其数值和协议与本文 v2 不同。旧版 `results/fm_nfe.json`、
-`results/fm_cfg.json`、`results/nfe_fid_curve.png` 及 `repro_manifest.json` 仍保留作历史记录。
-早期调试记录和通用实验模板中的路径、配置及示例结果不适用于当前 v2 命令。
+| 路径 | 内容 |
+|---|---|
+| [`train.py`](train.py) | 训练、EMA、checkpoint 保存与恢复 |
+| [`sample.py`](sample.py) | Euler / Heun 图像采样与 CFG |
+| [`eval_fid.py`](eval_fid.py) | FID 与 NFE 扫描，输出评测 JSON |
+| [`plot_nfe_curve.py`](plot_nfe_curve.py) | 由评测结果绘制 NFE–FID 曲线 |
+| [`export_checkpoint.py`](export_checkpoint.py) | 将续训 checkpoint 导出为推理权重 |
+| [`model/dit.py`](model/dit.py)、[`model/unet.py`](model/unet.py) | DiT 与简化 conditional U-Net |
+| [`results/fm_v2_unconditional_solvers.json`](results/fm_v2_unconditional_solvers.json) | FM-U Euler / Heun 的原始 FID 结果 |
+| [`results/fm_v2_conditional_cfg.json`](results/fm_v2_conditional_cfg.json) | FM-C CFG 扫描的原始 FID 结果 |
+| [`results/nfe_fid_curve_v2.png`](results/nfe_fid_curve_v2.png) | FM 与 Project 1 DDIM 的 NFE–FID 曲线 |
+| [`repro_manifest_v2.json`](repro_manifest_v2.json) | 软硬件、配置、数据、权重哈希和评测协议 |
 
-完整 v2 复现元数据和文件哈希见 [`repro_manifest_v2.json`](repro_manifest_v2.json)、
-[`repro_manifest_v2.sha256`](repro_manifest_v2.sha256) 与
-[`results/checkpoint_sha256.txt`](results/checkpoint_sha256.txt)。
