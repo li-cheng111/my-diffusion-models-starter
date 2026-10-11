@@ -54,13 +54,8 @@
 <p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_seed42.png" alt="手写 Stable Diffusion 推理结果" width="960"></p>
 <p align="center"><strong>图 1｜手写推理生成结果</strong><br><sub>seed=42、50 DDIM steps、CFG=7.5</sub></p>
 
-### A 的思考题结论
-
-1. CFG=0 时公式退化为 unconditional 预测，prompt 条件方向不参与结果。
-2. 只用 conditional embedding 仍是条件生成，但失去 unconditional-to-conditional 的 CFG 外推。
-3. 把 init_noise_sigma 错设成 0.5 会让初始 latent 尺度不符合 scheduler 预期，可能影响亮度、对比度和细节；应读取 scheduler 的值。
-4. 反向过程噪声尺度总体下降，但包含 UNet 预测、CFG 和 scheduler 参数化，不是 forward 的简单逐项逆映射。
-5. 仅 5 steps 时离散采样校正机会少，通常结构/纹理更不稳定；增加 steps 有帮助，但计算成本增加且收益会递减。
+### Reading Notes：LDM和SDXL
+链接：[reading_note_ldm.md](https://github.com/li-cheng111/my-diffusion-models-starter/blob/main/projects/project3_stable_diffusion/notes/reading_note_ldm.md)
 
 ## 5. B：CFG、steps 与 sampler 扫描
 
@@ -191,53 +186,7 @@ evaluate_lora.py 在 SD pipeline 中评估 base、checkpoint-0200、0400、0600�
 
 原始图链接：[generated.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/generated.png) · [attention_03_cat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_03_cat_w.png) · [attention_07_wizard_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_07_wizard_w.png) · [attention_08_hat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_08_hat_w.png) · [attention_12_forest_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_12_forest_w.png)
 
-## 9. LDM 与 SDXL 阅读笔记
-
-### LDM §3–4
-
-Latent Diffusion Models 先训练感知压缩 autoencoder：encoder E 将图像 x 编为 z=E(x)，decoder D 使 x≈D(z)。扩散过程在较低维 z 空间中进行，而不是直接对高分辨率像素做 UNet 计算。前向扩散和噪声预测目标可概括为：
-
-- z_t = sqrt(alpha_bar_t) z_0 + sqrt(1 - alpha_bar_t) epsilon
-- L_simple = E[ || epsilon - epsilon_theta(z_t, t, c) ||² ]
-
-文本条件通过 cross-attention 注入：Q 来自当前 latent feature，K/V 来自文本 token embedding，softmax(QKᵀ/sqrt(d))V 把条件语义写入空间特征。CFG 则将 unconditional 与 conditional 预测做线性外推。A 的 shape 跟踪、C 的 VAE 重构和 E 的 attention map 分别对应这些组成机制。
-
-优点是大幅降低空间计算和显存；代价是 VAE 压缩误差、scaling factor、解码能力和文本 tokenizer 都会影响最终细节。
-
-### SDXL 前半部分
-
-SDXL 不只是加宽 SD 1.5 UNet：它使用两个 CLIP text encoder，组合不同 embedding 空间，并加入 pooled text embedding、原始图像尺寸、裁剪坐标与目标尺寸等 additional conditioning。Base 负责主体构图，refiner 在低噪声阶段侧重恢复高频纹理；相应代价是更高显存、更复杂的双文本编码和严格的尺寸 metadata。
-
-与本项目的联系：D 的 LoRA 在固定 VAE/text interface 上学习 UNet attention 的低秩偏移；E 显示 QKᵀ 中 token 对空间 query 的响应；迁移 SDXL 时不能只替换 UNet，还须同步处理双文本编码器与额外条件输入。
-
-## 10. AutoDL 执行、复现与真实 debug
-
-### 执行顺序与验收记录
-
-AutoDL smoke 阶段通过 Project 3 pytest（**5 passed**）、5-step 手写推理/扫描 smoke、2-step LoRA 保存与重载、单 prompt ControlNet、单 token attention map；随后完成 full sweep、A/C/E 三个 notebook 的 execute 输出、800-step LoRA、四风格加冲突 ControlNet、30-step cross-attention。耗时可核验值包括 full sweep 36.642 秒、LoRA 209.47 秒、LoRA 独立评估 37.549 秒、full attention 9.031 秒。日志、JSONL、环境快照和图像 hashes 均在仓库 outputs/ 与 logs/ 下。
-
-| 验收点 | 本次记录 |
-|---|---|
-| 手写推理与 notebook 输出 | 记录 seed/steps/latent 统计并生成 512×512 图 |
-| 扫描范围与可视化 | 五档 CFG、四档 steps、三种 sampler；含网格、汇总图和 metadata |
-| VAE | 输入/latent/重构 shape、四通道统计及 MSE/PSNR |
-| LoRA | 800 steps、loss 有限、20 张数据、adapter 小于 25 MB、独立重载 |
-| ControlNet / attention | 四种风格 + 冲突图；有效 token heatmap 与 16/32 map |
-| 仓库卫生 | 基础模型权重、HF cache、原图和临时训练 checkpoint 不入 Git |
-
-运行产物 metadata 中 git_commit 为 null，因此它们未携带一个可直接验证的运行时源代码提交号；GitHub 这份统一文稿及对应输出采用已读取快照 main@6b14f26。若未来重跑，建议把 git_commit 和不可变模型 revision 写入每一份 metadata。
-
-### 已记录的真实问题与修复
-
-1. 旧 huggingface_hub 与 Diffusers 0.40 的 cached_download 接口不兼容，导入失败；升级到锁定环境组合中的 huggingface_hub 1.31.0 后恢复。
-2. Windows 工作站仓库输出目录 ACL 对普通 Python 进程只读，运行产物改放仓库外可写路径；AutoDL 则按计划使用持久目录及仓库 outputs。
-3. LoRA 初次评估图与 base SHA256 相同；原因是 pipeline loader 忽略缺少 unet. 前缀的 UNet-only adapter。改用 UNet loader 并传 prefix=None 后通过图像变化验证修复。
-4. cross-attention 初版在 norm_cross=None 的模块调用 norm_encoder_hidden_states，触发 assertion；仅在 norm_cross 为真时做归一化。
-5. tokenizer token 名中含尖括号，在 Windows 上直接做文件名失败；现用安全字符过滤 label，同时保留 token index。
-6. AutoDL 访问 Wikimedia Commons 出现 OSError 99；于是使用 ModelScope 的 20 张 huggan/vangogh2photo imageA 数据，记录来源、镜像 metadata 许可说明和 SHA256，未把镜像伪称为 Commons 原图。
-7. AutoDL 网络不可达导致 check_env 的远端 HEAD 检查不能单独作为成功依据；最终以镜像权重 hash、实际运行输出和实验 metadata 验收。
-
-## 11. 自查问题与结论
+## 9. 自查问题与结论
 
 1. **CFG=0 会怎样？** 只使用 unconditional 预测，prompt 的条件方向不被 CFG 采用。
 2. **只用 conditional embedding 会怎样？** 仍可条件采样，但不再有 unconditional-to-conditional 外推，prompt adherence 往往不同。
@@ -252,9 +201,7 @@ AutoDL smoke 阶段通过 Project 3 pytest（**5 passed**）、5-step 手写推�
 11. **为什么 SD 1.5 常见 512×512？** VAE 将图像压缩至 64×64 latent，成本可控；分辨率翻倍会让 latent 位置数量约增至四倍。
 12. **为什么扩散模型常画不好文字？** CLIP/tokenizer 更偏词级语义而非字符排版；训练目标、数据对齐与 VAE 对细线条的平滑共同限制文字准确度。
 
-**总的实验结论：**手写路径验证了 SD 1.5 从 CLIP 条件到 latent 去噪再到 VAE 解码的接口；参数扫描展示了 guidance 强度、采样步数、sampler 选择之间的可视化取舍；VAE 量化揭示了压缩/细节之间的折衷；LoRA 能以小型 adapter 产生可重载的风格变化；ControlNet 在固定边缘上改变风格，attention heatmap 则展示文本 token 对生成空间的软性响应。所有结论的适用范围是本项目所记录的模型、数据、单组或少量 prompt 与 seed，不外推为 FID 等大规模统计质量结论。
-
-## 12. 代码与产物索引
+## 10. 代码与产物索引
 
 - A：01_inference_walkthrough.ipynb、outputs/manual/
 - B：02_parameter_sweep.py、outputs/sweep/、outputs/sweep_smoke/
@@ -265,15 +212,3 @@ AutoDL smoke 阶段通过 Project 3 pytest（**5 passed**）、5-step 手写推�
 - 阅读笔记：notes/、reading_notes/
 - 报告图生成：make_report_figures.py；仓库中的汇总图保存在 outputs/report/，其他内嵌图直接引用对应的已提交实验 PNG。
 
-基础 SD/ControlNet 权重、Hugging Face cache、20 张训练原图和临时训练 checkpoint 不应放入 Git。完整文件结构请以项目目录为准。
-
-## 13. 参考资料
-
-- [Project 3 原始作业要求](https://github.com/Qi-StarterTrain/diffusion-project3-stable-diffusion)
-- [本报告引用的项目代码与实验产物快照](https://github.com/li-cheng111/my-diffusion-models-starter/tree/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion)
-- [Stable Diffusion 1.5 模型仓库](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5)
-- [Latent Diffusion Models 论文](https://arxiv.org/abs/2112.10752)
-- [SDXL 论文](https://arxiv.org/abs/2307.01952)
-- [LoRA 论文](https://arxiv.org/abs/2106.09685)
-- [ControlNet 论文](https://arxiv.org/abs/2302.05543)
-- [Diffusers LoRA 训练文档](https://huggingface.co/docs/diffusers/en/training/lora)
