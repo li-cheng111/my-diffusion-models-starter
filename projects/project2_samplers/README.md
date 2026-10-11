@@ -237,7 +237,14 @@ $$
 
 ### 5. 误差来源：DDIM Inversion 为什么不能保证精确重构？
 
-令 $a_t=\sqrt{\bar\alpha_t}$、$b_t=\sqrt{1-\bar\alpha_t}$，无裁剪的确定性 DDIM 可写为：
+记 $a_t$ 和 $b_t$ 分别为：
+
+$$
+a_t=\sqrt{\bar\alpha_t},\qquad
+b_t=\sqrt{1-\bar\alpha_t}.
+$$
+
+无裁剪的确定性 DDIM 可写为：
 
 $$
 x_s=\frac{a_s}{a_t}x_t+
