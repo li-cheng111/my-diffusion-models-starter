@@ -26,8 +26,8 @@ $$
 文本条件通过 cross-attention 注入：查询 $Q$ 来自当前 latent feature，键和值 $K,V$ 来自文本 token embedding。注意力计算为：
 
 $$
-\operatorname{Attention}(Q,K,V)
-    = \operatorname{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d}}\right)V.
+\mathrm{Attention}(Q,K,V)
+    = \mathrm{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d}}\right)V.
 $$
 
 该操作将 token 语义写回空间位置。Classifier-free guidance 用 unconditional 和 conditional 预测做线性外推，提高 prompt adherence。
