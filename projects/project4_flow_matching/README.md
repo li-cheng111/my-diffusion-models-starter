@@ -5,6 +5,8 @@ Classifier-Free Guidance（CFG）采样，并用 FID 与 Project 1 的 DDIM 基�
 
 > 仓库还保留 v1 的配置、结果和复现清单，供历史参考。
 
+本仓库还提供 Project 4 fair-v1 严格对照实验记录；AutoDL 节点 C 已完成的 F-DiT 训练与评估、Release 下载步骤见 [fair-v1 README](fair_v1/README.md)。本次归档仅覆盖 F-DiT，不代表 fair-v1 全部实验均已完成。
+
 ## 一、方法原理
 
 线性路径从标准高斯噪声 `epsilon` 插值到数据图像 `x1`：
@@ -87,7 +89,7 @@ $$
 
 ![FM 与 Project 1 DDIM 的 NFE–FID 曲线](results/nfe_fid_curve_v2.png)
 
-FM Euler 在 NFE 8、16 的 FID 分别低于 DDIM NFE 10、20 的测点，但 NFE 50 结果中 DDIM 优于 FM Euler，NFE 100 时 DDIM 也优于已测的 FM Heun。因此，本组数据能一定程度上体现“FM 在低 NFE 下总体优于 DDIM”的结论，但**不能**很有力地确认此现象。
+FM Euler 在 NFE 8、16 的结果与 DDIM NFE 10、20 不属于预算对齐比较。预算对齐的 NFE 50 测点中 DDIM 优于 FM Euler，NFE 100 时 DDIM 也优于已测的 FM Heun。因此，本组数据总体上不支持“FM 在低 NFE 下优于 DDIM”的结论。
 
 两边评测协议较一致，但模型与训练过程不同：FM 使用 32.62M 参数 DiT-S，DDIM 使用
 Project 1 R5 U-Net；训练架构与预算并未控制一致。每项只有 seed 42 的一次测量，没有种子
