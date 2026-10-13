@@ -15,20 +15,21 @@
 令 $o$ 表示当前图像与允许输入的状态，$\mathbf{a}_0=(a_0,\ldots,a_{H-1})$ 表示一段动作块。DDPM 对动作块加噪并预测噪声：
 
 $$
-\mathbf{a}_t=\sqrt{\bar\alpha_t}\,\mathbf{a}_0+\sqrt{1-\bar\alpha_t}\,\boldsymbol\epsilon,
-\qquad
-\mathcal{L}_{\mathrm{DDPM}}=\mathbb{E}_{t,\mathbf{a}_0,\boldsymbol\epsilon,o}
-\left[\left\|\boldsymbol\epsilon-\boldsymbol\epsilon_\theta(\mathbf{a}_t,t,o)\right\|_2^2\right].
+\begin{aligned}
+\mathbf{a}_t &= \sqrt{\bar\alpha_t}\,\mathbf{a}_0+\sqrt{1-\bar\alpha_t}\,\boldsymbol\epsilon, \\
+\mathcal{L}_{\mathrm{DDPM}} &= \mathbb{E}_{t,\mathbf{a}_0,\boldsymbol\epsilon,o} \\
+&\quad \left[\left\|\boldsymbol\epsilon-\boldsymbol\epsilon_\theta(\mathbf{a}_t,t,o)\right\|_2^2\right].
+\end{aligned}
 $$
 
 BC 直接回归动作块；FM 在高斯噪声与数据动作之间线性插值，并学习从噪声指向动作的速度场。开启 padding mask 时，三种损失均只对有效动作槽位计入均方误差。
 
 $$
-\mathcal{L}_{\mathrm{BC}}=\mathbb{E}\left[\|f_\theta(o)-\mathbf{a}_0\|_2^2\right],
-\qquad
-\mathbf{a}_t=(1-t)\mathbf{z}+t\mathbf{a}_0,
-\qquad
-\mathcal{L}_{\mathrm{FM}}=\mathbb{E}\left[\|v_\theta(\mathbf{a}_t,t,o)-(\mathbf{a}_0-\mathbf{z})\|_2^2\right].
+\begin{aligned}
+\mathcal{L}_{\mathrm{BC}} &= \mathbb{E}\left[\|f_\theta(o)-\mathbf{a}_0\|_2^2\right], \\
+\mathbf{a}_t &= (1-t)\mathbf{z}+t\mathbf{a}_0, \\
+\mathcal{L}_{\mathrm{FM}} &= \mathbb{E}\left[\|v_\theta(\mathbf{a}_t,t,o)-(\mathbf{a}_0-\mathbf{z})\|_2^2\right].
+\end{aligned}
 $$
 
 ### 设计决策
@@ -40,20 +41,20 @@ $$
 
 ## 主结果：单训练种子公平对照
 
-10 个条件均使用训练 seed 42、同一批 1,000 条成功专家轨迹（按各自 H 构造动作块）、4×4 spatial CNN、余弦噪声调度、10,000 次更新和相同的 100 个评估 episode（环境 seeds 10000–10099）。batch size 为 256，优化器为 AdamW，learning rate 为 1e-3，weight decay 为 0，EMA decay 为 0.999。每次执行 4 步后重新规划；DDPM 使用 20 步 DDIM 采样，FM 使用 10 步 Euler 积分。表中 checkpoint 于 2026-10-13 从 [Project 5 fair seed 42 Release](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-fair-seed42-v1.0.0) 恢复，并用代码提交 `c062751` 重评估；没有重新训练。成功率区间为 95% Wilson 区间，只反映评估 episode 抽样不确定性，不表示训练 seed 间方差。
+10 个条件均使用训练 seed 42、同一批 1,000 条成功专家轨迹（按各自 H 构造动作块）、4×4 spatial CNN、余弦噪声调度、10,000 次更新和相同的 100 个评估 episode（环境 seeds 10000–10099）。batch size 为 256，优化器为 AdamW，learning rate 为 1e-3，weight decay 为 0，EMA decay 为 0.999。每次执行 4 步后重新规划；DDPM 使用 20 步 DDIM 采样，FM 使用 10 步 Euler 积分。表中 checkpoint 于 2026-10-13 从 [Project 5 fair seed 42 Release](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-fair-seed42-v1.0.0) 恢复，并用代码提交 `c062751` 重评估；没有重新训练。
 
-| 方法 | H | 填充掩码 | 成功率（95% Wilson CI） | 碰撞率 | 超时率 | 平均步数 | 末端距离 | 沿途目标距离 |
+| 方法 | H | 填充掩码 | 成功率 | 碰撞率 | 超时率 | 平均步数 | 末端距离 | 沿途目标距离 |
 |---|---:|:---:|---:|---:|---:|---:|---:|---:|
-| BC | 16 | 是 | 88%（80.2–93.0%） | 9% | 3% | 26.95 | 0.0913 | 0.4877 |
-| DDPM | 16 | 是 | 81%（72.2–87.5%） | 8% | 11% | 35.57 | 0.1339 | 0.4675 |
-| FM | 16 | 是 | 87%（79.0–92.2%） | 7% | 6% | 29.53 | 0.0987 | 0.4736 |
-| DDPM | 8 | 是 | 89%（81.4–93.7%） | 7% | 4% | 27.57 | 0.0994 | 0.4852 |
-| DDPM | 32 | 是 | 48%（38.5–57.7%） | 6% | 46% | 64.39 | 0.2621 | 0.4612 |
-| DDPM | 64 | 是 | 26%（18.4–35.4%） | 1% | 73% | 85.86 | 0.3668 | 0.5033 |
-| DDPM | 8 | 否 | **91%（83.8–95.2%）** | 7% | 2% | 26.37 | 0.0919 | 0.4887 |
-| DDPM | 16 | 否 | 85%（76.7–90.7%） | 8% | 7% | 31.50 | 0.1115 | 0.4769 |
-| DDPM | 32 | 否 | 66%（56.3–74.5%） | 7% | 27% | 54.73 | 0.2138 | 0.4716 |
-| DDPM | 64 | 否 | 28%（20.1–37.5%） | 9% | 63% | 81.96 | 0.4147 | 0.5955 |
+| BC | 16 | 是 | 88% | 9% | 3% | 26.95 | 0.0913 | 0.4877 |
+| DDPM | 16 | 是 | 81% | 8% | 11% | 35.57 | 0.1339 | 0.4675 |
+| FM | 16 | 是 | 87% | 7% | 6% | 29.53 | 0.0987 | 0.4736 |
+| DDPM | 8 | 是 | 89% | 7% | 4% | 27.57 | 0.0994 | 0.4852 |
+| DDPM | 32 | 是 | 48% | 6% | 46% | 64.39 | 0.2621 | 0.4612 |
+| DDPM | 64 | 是 | 26% | 1% | 73% | 85.86 | 0.3668 | 0.5033 |
+| DDPM | 8 | 否 | **91%** | 7% | 2% | 26.37 | 0.0919 | 0.4887 |
+| DDPM | 16 | 否 | 85% | 8% | 7% | 31.50 | 0.1115 | 0.4769 |
+| DDPM | 32 | 否 | 66% | 7% | 27% | 54.73 | 0.2138 | 0.4716 |
+| DDPM | 64 | 否 | 28% | 9% | 63% | 81.96 | 0.4147 | 0.5955 |
 
 - 主矩阵最高点估计为 DDPM、H=8、未屏蔽填充动作的 91%；每个条件只有一个训练 seed，不能据此断言方法间存在显著差异。
 - H=16 时 BC、FM、DDPM masked 分别为 88%、87%、81%；本实验没有显示 DDPM 优于 BC。
@@ -106,13 +107,18 @@ ImageNet ResNet-18 加分实验的训练日志还提供了步速和末段 loss�
 
 ### 成功闭环轨迹
 
-以下为报告要求的三个成功 rollout 示例；更多轨迹见 `results/rollouts/` 和 `results/bonus_rollouts/`。
+以下展示四个成功 rollout。蓝线为策略执行轨迹，圆点为起点，红星为目标，灰色方块为障碍物。采用 2×2 图组，便于横向比较不同场景中的闭环路径；更多轨迹见 `results/rollouts/` 和 `results/bonus_rollouts/`。
 
-![成功 rollout 示例 1](results/rollouts/success_ep000.png)
-
-![成功 rollout 示例 2](results/rollouts/success_ep001.png)
-
-![成功 rollout 示例 3](results/rollouts/success_ep002.png)
+<table>
+  <tr>
+    <td align="center"><img src="results/rollouts/success_ep000.png" alt="成功闭环轨迹 episode 0" width="420"/><br/><sub>Episode 0</sub></td>
+    <td align="center"><img src="results/rollouts/success_ep001.png" alt="成功闭环轨迹 episode 1" width="420"/><br/><sub>Episode 1</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="results/rollouts/success_ep002.png" alt="成功闭环轨迹 episode 2" width="420"/><br/><sub>Episode 2</sub></td>
+    <td align="center"><img src="results/rollouts/success_ep003.png" alt="成功闭环轨迹 episode 3" width="420"/><br/><sub>Episode 3</sub></td>
+  </tr>
+</table>
 
 ![扩展实验结果汇总](results/bonus_summary.png)
 
@@ -137,9 +143,9 @@ ImageNet ResNet-18 加分实验的训练日志还提供了步速和末段 loss�
 | TODO 19：action-chunk DDPM loss | `train.py`；余弦 scheduler、DDPM 目标及 mask loss；`tests/test_project5.py` | 已实现 |
 | TODO 20：视觉编码与 observation conditioning | `model.py`；CNN + 4×4 spatial pooling；图像和 agent state 条件 | 已实现；全局池化负结果保留作对照 |
 | TODO 21：闭环评估 | `eval.py`；成功、碰撞、超时、步数、末端距离和轨迹目标距离 | 已实现；每个公平条件 100 episodes |
-| test 环境成功率 ≥70% | 公平视觉 DDPM H=16 masked：81%（95% Wilson CI 72.2–87.5%）；移动障碍评估：72% | 点估计达标；移动障碍碰撞率 20%，安全性仍有限 |
+| test 环境成功率 ≥70% | 公平视觉 DDPM H=16 masked：81%；移动障碍评估：72% | 达到点估计目标；移动障碍碰撞率 20%，安全性仍有限 |
 | 消融、训练曲线、阶段 2/3 分析 | 本 README 的主矩阵、先导对照和曲线解释；`results/ablation.md`、`results/fair_seed42/` | 已报告；明确区分探索性结果与公平复评 |
-| ≥3 个成功 rollout、实验日志、≥3 条真实 debug 记录 | `results/rollouts/`（本文嵌入 3 张）；`logs/exp_log.md`；`debug_log.md`（5 条） | 文件齐全 |
+| ≥3 个成功 rollout、实验日志、≥3 条真实 debug 记录 | `results/rollouts/`（本文以 2×2 图组嵌入 4 张）；`logs/exp_log.md`；`debug_log.md`（5 条） | 文件齐全 |
 | FM 加分项 | 公平矩阵 H=16 masked：FM 87%，10-step Euler；DDPM 81%，20-step DDIM | 已实现并比较；未测实际 wall-clock 加速倍数 |
 | 多目标 / multimodal demos | 双目标数据，两个目标条件成功率 96.2% / 97.9% | 部分满足：未证明同一观测下的双峰动作分布，不夸称完整通过 +10 |
 | ResNet-18 与移动障碍加分项 | ResNet-18 5k/15k 训练和闭环结果；静态策略在移动障碍上评估 | 已做扩展实验；ResNet 收敛速度非严格同预算比较，动态场景碰撞仍高 |
@@ -208,4 +214,4 @@ python eval_checkpoint_archive.py --checkpoint-root assets/restored/runs/project
 
 ## 限制
 
-这是无摩擦、无动力学的二维点质量环境，不代表真实机器人控制能力。公平矩阵只有一个训练 seed；Wilson 区间只量化评估 episode 的不确定性。移动障碍实验的碰撞率升至 20%，静态训练策略在环境变化下仍有安全局限。多目标实验尚未验证同一观测下的双峰动作轨迹；ResNet-18 实验也没有按统一 wall-clock 或统一收敛阈值比较速度。因此，这两项结论按已获得的证据限定，不把部分验证写成完整证明。
+这是无摩擦、无动力学的二维点质量环境，不代表真实机器人控制能力。公平矩阵只有一个训练 seed，因此成功率是单次评估集上的观测比例，不能反映训练 seed 间方差。移动障碍实验的碰撞率升至 20%，静态训练策略在环境变化下仍有安全局限。多目标实验尚未验证同一观测下的双峰动作轨迹；ResNet-18 实验也没有按统一 wall-clock 或统一收敛阈值比较速度。因此，这两项结论按已获得的证据限定，不把部分验证写成完整证明。
