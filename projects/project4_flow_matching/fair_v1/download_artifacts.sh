@@ -26,6 +26,7 @@ case "${SCOPE,,}" in
       project4-fair-v1-a-f-u-seed44-step200000.pt
       project4-fair-v1-a-f-ct-seed44-step50000.pt
       project4-fair-v1-a-f-rf-seed44-step50000.pt
+      project4-fair-v1-node-a-seed44-repro.tar.gz
     ) ;;
   b)
     ASSETS=(
@@ -41,6 +42,7 @@ case "${SCOPE,,}" in
       project4-fair-v1-a-f-u-seed44-step200000.pt
       project4-fair-v1-a-f-ct-seed44-step50000.pt
       project4-fair-v1-a-f-rf-seed44-step50000.pt
+      project4-fair-v1-node-a-seed44-repro.tar.gz
       project4-fair-v1-b-f-c-seed44-step200000.pt
       project4-fair-v1-b-f-ln-seed44-step200000.pt
       project4-fair-v1-node-b-seed44-repro.tar.gz

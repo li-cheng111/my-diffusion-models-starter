@@ -78,15 +78,76 @@ F-LN 使用无条件 Euler：
 
 文件位置：`results/fair_v1/F-C/cfg.json`、`results/fair_v1/F-LN/euler.json`，对应 `.log` 和样图同目录；训练曲线、console log 与 metadata 在 `logs/fair_v1/F-C`、`logs/fair_v1/F-LN`。F-C checkpoint SHA-256 为 `0953f923b183d98dc422508909297472fab62826d89efa2f64de7adf87cfaf92`，F-LN 为 `797f1ca10a66aa37f3be785f1d4c7d8bf369a91b405cbc9ec5708e68213d425c`。B 节点复现包 `project4-fair-v1-node-b-seed44-repro.tar.gz` 为 58,919,911 bytes，SHA-256：`79caaec8cb920155fb0e279a152ffb4a679aaef1bdf0419399647a374ce2dec2`；按仓库根目录结构打包，包含源码快照、训练日志、metadata、全部 B 评测 JSON/日志/样图、固定噪声库和复评命令。两个最终 checkpoint 作为独立 Release 文件保存。
 
-## 节点 A：checkpoint 已归档，评测进行中
+## 节点 A：D-U、F-U、F-CT 与 F-RF（seed 44）
 
-A 的 D-U、F-U、F-CT checkpoint 与 F-RF 最终 checkpoint 已从实例取回并核验 SHA-256。F-RF 从 step 10,000 的恢复点续训到 step 50,000；checkpoint 中已恢复其教师 F-U 的 lineage 哈希（`ce3f58438a2ed29bdbff4e97ba2849dc09959b787bdc533f8fc5cf7c70963b96`）。训练目标已完成，但 A 的评测套件尚在运行，因此本次 Release 先上传 A 的四个最终 checkpoint；评测 JSON、日志、样图和 A 复现包将在评测及归档完成后补入。
+A 节点所有训练及评测已完成。F-RF 从保存的 step 10,000 检查点恢复并训练到 step 50,000；恢复后检查点保留教师 F-U 的 lineage 哈希 `ce3f58438a2ed29bdbff4e97ba2849dc09959b787bdc533f8fc5cf7c70963b96`。D-U 与 F-U 完成 200,000 步，F-CT 与 F-RF 完成 50,000 步。F-RF 的最终权重、来源关系和评测均已核验。
 
-| Release checkpoint | 大小（bytes） | SHA-256 |
+评估统一使用 TorchMetrics FID-2048；CIFAR-10 train 索引 `0:5000` 作为真实图像，每档生成 5,000 张，batch size 64，generation seed 1001，共同 CPU Gaussian noise bank 的 SHA-256 为 `a81b164722002a7b4649ba8519a1dff2befad6dd015a77aea97e7d28f261793e`。环境为 RTX 4080 SUPER、Python 3.12.3、PyTorch 2.8.0+cu128、torchvision 0.23.0+cu128。DDIM、ancestral/no-clip 与四个 FM 结果 JSON 都记录了 checkpoint SHA、步数、EMA、源码 revision 和逐项采样时间。
+
+### D-U：DDIM、ancestral 与 no-clip
+
+DDIM 使用固定噪声，对 2–100 NFE 评估；另测完整 ancestral 1,000 步，以及关闭 denoised clipping 的 DDIM-20。
+
+| DDIM NFE/图 | FID ↓ | 采样时间（秒） |
+|---:|---:|---:|
+| 2 | 389.6992 | 4.29 |
+| 4 | 56.7488 | 7.02 |
+| 8 | 29.1369 | 13.32 |
+| 10 | 26.2918 | 16.40 |
+| 16 | 22.0175 | 26.09 |
+| 20 | 19.9765 | 32.62 |
+| 32 | 17.9058 | 51.22 |
+| 50 | 16.3803 | 78.93 |
+| 64 | 16.0098 | 98.92 |
+| 100 | 15.4242 | 154.90 |
+
+| 附加评估 | FID ↓ | 采样时间（秒） |
+|---|---:|---:|
+| Ancestral，1,000 步 | 13.7594 | 1,486.54 |
+| DDIM-20，no-clip | 372.2270 | 32.67 |
+
+### F-U：Euler 与 Heun
+
+| NFE/图 | Euler FID ↓ | Euler 采样时间（秒） | Heun FID ↓ | Heun 采样时间（秒） |
+|---:|---:|---:|---:|---:|
+| 2 | 174.2554 | 3.88 | 404.2330 | 3.98 |
+| 4 | 68.3946 | 6.32 | 311.5474 | 6.36 |
+| 8 | 31.7916 | 12.09 | 139.7589 | 12.11 |
+| 10 | 27.6283 | 14.99 | 109.3425 | 15.00 |
+| 16 | 21.9929 | 24.00 | 67.4344 | 24.00 |
+| 20 | 20.8186 | 29.76 | 53.9351 | 29.70 |
+| 32 | 18.4714 | 47.22 | 32.1175 | 47.28 |
+| 50 | 17.3398 | 74.08 | 20.1862 | 74.05 |
+| 64 | 16.5395 | 94.39 | 16.9381 | 94.34 |
+| 100 | 15.9969 | 147.73 | 14.5048 | 147.57 |
+
+### F-CT 与 F-RF：Euler
+
+| NFE/图 | F-CT FID ↓ | 采样时间（秒） | F-RF FID ↓ | 采样时间（秒） |
+|---:|---:|---:|---:|---:|
+| 2 | 176.9113 | 4.02 | 20.2793 | 3.95 |
+| 4 | 69.8698 | 6.53 | 18.2201 | 6.30 |
+| 8 | 33.1324 | 12.10 | 17.2271 | 12.10 |
+| 10 | 28.7829 | 14.98 | 17.0783 | 14.97 |
+| 16 | 22.9350 | 24.01 | 16.7047 | 24.02 |
+| 20 | 21.6280 | 29.71 | 16.6678 | 29.72 |
+| 32 | 19.1418 | 47.22 | 16.4586 | 47.22 |
+| 50 | 17.9956 | 74.17 | 16.4426 | 74.10 |
+| 64 | 17.2232 | 94.45 | 16.3228 | 94.37 |
+| 100 | 16.6269 | 147.54 | 16.3683 | 147.58 |
+
+这些数值是单次 seed 44 结果，不构成跨种子显著性结论。FID 并不保证随 NFE 单调下降；表格保留原始实测值。逐项评测输出、日志、样图、A 的训练日志、配置、评测脚本和固定噪声库都包含在 A 复现归档中。
+
+| Release 资产 | 大小（bytes） | SHA-256 |
 |---|---:|---|
 | `project4-fair-v1-a-d-u-seed44-step200000.pt` | 610,942,975 | `b57e30c02aa03b47e587ced38fd91471ac3dc8e50a11be2056ce20b5370df78e` |
 | `project4-fair-v1-a-f-u-seed44-step200000.pt` | 610,942,911 | `ce3f58438a2ed29bdbff4e97ba2849dc09959b787bdc533f8fc5cf7c70963b96` |
 | `project4-fair-v1-a-f-ct-seed44-step50000.pt` | 610,941,444 | `8532bc0335214f71271896a33de8459aaa5b103239c9b2780185e8a1e06b9d59` |
 | `project4-fair-v1-a-f-rf-seed44-step50000.pt` | 610,941,547 | `0fea3d161b7eb9a9d4396f75dab438e230f9fe1910914aa1e4b4f25167bed5cd` |
+| `project4-fair-v1-node-a-seed44-repro.tar.gz` | 64,107,873 | `1f845b46c206f0bb1e242fdb4e1f56d93268d4bd4d904940b279185487d80344` |
 
-The shared checksum manifest `ASSET_SHA256SUMS.txt` lists the current Release checkpoints and completed B/C reproduction bundles. The AutoDL A instance must remain available until its evaluation suite and self-contained archive finish.
+复现包内部的 `CHECKPOINT_SHA256SUMS.txt` 列出四个独立 Release checkpoint 的哈希；checkpoint 大文件单独提供，归档包含代码快照、配置、训练日志/metadata、评测 JSON/完整日志/样图、噪声库和来源 revision。训练 metadata 中 D-U 记录 revision `8eb7c8d90b4feb35d9e6a734fdaa538ef919bb99`，FM 检查点记录 `ce4174ae46ad2a0a763fad4b4a4a6330c383fe6b`。A bundle SHA 在本地下载副本、AutoDL 原件及 Release 资产间一致。
+
+## 所有节点的下载与校验
+
+Release：<https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-fair-v1.0>。从仓库根目录运行 `bash projects/project4_flow_matching/fair_v1/download_artifacts.sh artifacts/project4-fair-v1 all` 可下载并校验所有节点；将最后参数设为 `A`、`B` 或 `C` 可以只取对应节点。脚本按 `ASSET_SHA256SUMS.txt` 逐项核验 Release 二进制，并解压复现包。CIFAR-10 数据集不在 Release 中，需自行准备。

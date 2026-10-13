@@ -1,8 +1,8 @@
 # Project 4 fair-v1 实验实现
 
-该目录实现 Project 4 fair-v1 的单种子对照实验。实验矩阵分布在三个 AutoDL 节点：A 运行 D-U、F-U、F-CT、F-RF；B 运行 F-C、F-LN；C 运行 F-DiT。训练 seed 均为 44。GitHub Release [project4-fair-v1.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-fair-v1.0) 已有 B、C 的完整复现归档和 A 的最终 checkpoint；A 的评测结果及完整复现包仍在生成，完成后会补入同一 Release。
+该目录实现 Project 4 fair-v1 的单种子对照实验。实验矩阵分布在三个 AutoDL 节点：A 运行 D-U、F-U、F-CT、F-RF；B 运行 F-C、F-LN；C 运行 F-DiT。训练 seed 均为 44。GitHub Release [project4-fair-v1.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-fair-v1.0) 已包含 A、B、C 的 checkpoint 和完整复现归档。A 的 5 组评测已全部完成并核验；结果、日志、样图、固定噪声库和复现脚本都在 A 节点归档中。
 
-各节点评测覆盖：A 计划运行 DDIM、ancestral、no-clip、Euler 与 Heun；B 的条件 CFG 和 logit-normal 时间采样及 C 的 DiT-S Euler 已完成。每项结果和实验边界见 [ARTIFACTS.md](ARTIFACTS.md)。所有表格都是单次单种子运行，不代表跨种子统计显著性。
+各节点评测覆盖：A 运行 DDIM、ancestral、no-clip、Euler 与 Heun；B 运行条件 CFG 和 logit-normal 时间采样；C 运行 DiT-S Euler。每项结果和实验边界见 [ARTIFACTS.md](ARTIFACTS.md)。所有表格都是单次单种子运行，不代表跨种子统计显著性。
 
 ## 下载训练和评测产物
 
@@ -10,7 +10,7 @@
 
     bash projects/project4_flow_matching/fair_v1/download_artifacts.sh artifacts/project4-fair-v1 all
 
-也可以单独指定 `A`、`B` 或 `C`。当前 A 范围下载四个最终 checkpoint；B、C 范围还会下载完整复现包。脚本按仓库内的 `ASSET_SHA256SUMS.txt` 校验每个 Release 文件，再解压已完成节点的源码、训练日志、评测 JSON、日志、样图和固定噪声库。A 的评测归档发布后，A 范围也会包含该归档。CIFAR-10 数据集不在归档中，按项目设置说明准备。
+也可以单独指定 `A`、`B` 或 `C`。每个节点范围均下载该节点 checkpoint 与复现归档；`all` 会下载完整矩阵。脚本按仓库内的 `ASSET_SHA256SUMS.txt` 校验每个 Release 文件，再解压源码、训练日志、评测 JSON、日志、样图和固定噪声库。CIFAR-10 数据集不在归档中，按项目设置说明准备。
 
 ## 训练与评测设置
 
