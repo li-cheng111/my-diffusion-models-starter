@@ -102,12 +102,18 @@ curl -fLO "$base/project5-fair-seed42-checkpoints.tar.gz"
 curl -fLO "$base/project5-fair-seed42-results.tar.gz"
 curl -fLO "$base/project5-vla-action-diffusion-source-14a93fd.tar.gz"
 sha256sum -c SHA256SUMS
+curl -fLO "$base/project5-fair-seed42-reeval-c062751.tar.gz"
+curl -fLO "$base/project5-vla-action-diffusion-source-a2b695d.tar.gz"
+curl -fLO "$base/SHA256SUMS-project5-c062751.txt"
+sha256sum -c SHA256SUMS-project5-c062751.txt
 cd ../..
 tar -xzf assets/release/project5-fair-seed42-checkpoints.tar.gz -C assets/restored
+mkdir -p runs/project5_release_eval_archive
+tar -xzf assets/release/project5-fair-seed42-reeval-c062751.tar.gz -C runs/project5_release_eval_archive
 python eval_checkpoint_archive.py --checkpoint-root assets/restored/runs/project5_fair --run-root runs/project5_release_eval --episodes 100 --seed-start 10000
 ```
 
-`eval_checkpoint_archive.py --resume` 会跳过已经生成 `eval.json` 的条件，适合断线后接续；正式复现训练矩阵则使用上一节的 `run_fair_experiments.py` 命令。`SHA256SUMS` 同时校验 checkpoint、结果和 source 三个 Release 附件。Release source 是当时的源码快照；实验应以当前克隆的 `main` 作为评估代码。
+`eval_checkpoint_archive.py --resume` 会跳过已经生成 `eval.json` 的条件，适合断线后接续；正式复现训练矩阵则使用上一节的 `run_fair_experiments.py` 命令。Release 中原 `SHA256SUMS` 校验 checkpoint、首批结果和源码快照；`SHA256SUMS-project5-c062751.txt` 校验本次复评结果和更新后的源码快照。复评归档可直接检查或引用；从 checkpoint 重新运行脚本则会生成新的完整评估目录。Release source 是源码快照；实验应以当前克隆的 `main` 作为评估代码。
 
 ## 限制
 
