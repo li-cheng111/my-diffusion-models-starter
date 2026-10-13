@@ -1,6 +1,12 @@
 {
   "protocol": {
-    "training_seed": 42
+    "training_seed": 42,
+    "evaluation_seed_start": 10000,
+    "evaluation_episodes_per_condition": 100,
+    "evaluation_code_commit": "c062751",
+    "missing_conditions": [],
+    "source_checkpoint_release": "project5-fair-seed42-v1.0.0 / project5-fair-seed42-checkpoints.tar.gz",
+    "re_evaluation_date": "2026-10-13"
   },
   "conditions": {
     "bc_h16_masked": {
@@ -19,6 +25,7 @@
       "timeout_rate": 0.03,
       "avg_steps": 26.95,
       "mean_final_distance": 0.09131341223964087,
+      "mean_path_target_distance": 0.4876851019277131,
       "evaluation": {
         "method": "bc",
         "success_rate": 0.88,
@@ -26,6 +33,7 @@
         "timeout_rate": 0.03,
         "avg_steps": 26.95,
         "mean_final_distance": 0.09131341223964087,
+        "mean_path_target_distance": 0.4876851019277131,
         "episodes": 100,
         "successes": 88,
         "collisions": 9,
@@ -54,6 +62,7 @@
       "timeout_rate": 0.11,
       "avg_steps": 35.57,
       "mean_final_distance": 0.13385985665422684,
+      "mean_path_target_distance": 0.4675100781898637,
       "evaluation": {
         "method": "ddpm",
         "success_rate": 0.81,
@@ -61,6 +70,7 @@
         "timeout_rate": 0.11,
         "avg_steps": 35.57,
         "mean_final_distance": 0.13385985665422684,
+        "mean_path_target_distance": 0.4675100781898637,
         "episodes": 100,
         "successes": 81,
         "collisions": 8,
@@ -89,6 +99,7 @@
       "timeout_rate": 0.06,
       "avg_steps": 29.53,
       "mean_final_distance": 0.09866791053045208,
+      "mean_path_target_distance": 0.4736206413108247,
       "evaluation": {
         "method": "fm",
         "success_rate": 0.87,
@@ -96,6 +107,7 @@
         "timeout_rate": 0.06,
         "avg_steps": 29.53,
         "mean_final_distance": 0.09866791053045208,
+        "mean_path_target_distance": 0.4736206413108247,
         "episodes": 100,
         "successes": 87,
         "collisions": 7,
@@ -124,6 +136,7 @@
       "timeout_rate": 0.04,
       "avg_steps": 27.57,
       "mean_final_distance": 0.0993996218372139,
+      "mean_path_target_distance": 0.48516486465946684,
       "evaluation": {
         "method": "ddpm",
         "success_rate": 0.89,
@@ -131,6 +144,7 @@
         "timeout_rate": 0.04,
         "avg_steps": 27.57,
         "mean_final_distance": 0.0993996218372139,
+        "mean_path_target_distance": 0.48516486465946684,
         "episodes": 100,
         "successes": 89,
         "collisions": 7,
@@ -159,6 +173,7 @@
       "timeout_rate": 0.46,
       "avg_steps": 64.39,
       "mean_final_distance": 0.26210290136862535,
+      "mean_path_target_distance": 0.4611744963878311,
       "evaluation": {
         "method": "ddpm",
         "success_rate": 0.48,
@@ -166,6 +181,7 @@
         "timeout_rate": 0.46,
         "avg_steps": 64.39,
         "mean_final_distance": 0.26210290136862535,
+        "mean_path_target_distance": 0.4611744963878311,
         "episodes": 100,
         "successes": 48,
         "collisions": 6,
@@ -194,6 +210,7 @@
       "timeout_rate": 0.73,
       "avg_steps": 85.86,
       "mean_final_distance": 0.36675843984740547,
+      "mean_path_target_distance": 0.5033481007680289,
       "evaluation": {
         "method": "ddpm",
         "success_rate": 0.26,
@@ -201,6 +218,7 @@
         "timeout_rate": 0.73,
         "avg_steps": 85.86,
         "mean_final_distance": 0.36675843984740547,
+        "mean_path_target_distance": 0.5033481007680289,
         "episodes": 100,
         "successes": 26,
         "collisions": 1,
@@ -229,6 +247,7 @@
       "timeout_rate": 0.02,
       "avg_steps": 26.37,
       "mean_final_distance": 0.09186299371684907,
+      "mean_path_target_distance": 0.4886880132113586,
       "evaluation": {
         "method": "ddpm",
         "success_rate": 0.91,
@@ -236,6 +255,7 @@
         "timeout_rate": 0.02,
         "avg_steps": 26.37,
         "mean_final_distance": 0.09186299371684907,
+        "mean_path_target_distance": 0.4886880132113586,
         "episodes": 100,
         "successes": 91,
         "collisions": 7,
@@ -264,6 +284,7 @@
       "timeout_rate": 0.07,
       "avg_steps": 31.5,
       "mean_final_distance": 0.11151557688165681,
+      "mean_path_target_distance": 0.47689723019171565,
       "evaluation": {
         "method": "ddpm",
         "success_rate": 0.85,
@@ -271,6 +292,7 @@
         "timeout_rate": 0.07,
         "avg_steps": 31.5,
         "mean_final_distance": 0.11151557688165681,
+        "mean_path_target_distance": 0.47689723019171565,
         "episodes": 100,
         "successes": 85,
         "collisions": 8,
@@ -299,6 +321,7 @@
       "timeout_rate": 0.27,
       "avg_steps": 54.73,
       "mean_final_distance": 0.21381072249715483,
+      "mean_path_target_distance": 0.4715540715043696,
       "evaluation": {
         "method": "ddpm",
         "success_rate": 0.66,
@@ -306,6 +329,7 @@
         "timeout_rate": 0.27,
         "avg_steps": 54.73,
         "mean_final_distance": 0.21381072249715483,
+        "mean_path_target_distance": 0.4715540715043696,
         "episodes": 100,
         "successes": 66,
         "collisions": 7,
@@ -334,6 +358,7 @@
       "timeout_rate": 0.63,
       "avg_steps": 81.96,
       "mean_final_distance": 0.41469992134487926,
+      "mean_path_target_distance": 0.5955233162979454,
       "evaluation": {
         "method": "ddpm",
         "success_rate": 0.28,
@@ -341,6 +366,7 @@
         "timeout_rate": 0.63,
         "avg_steps": 81.96,
         "mean_final_distance": 0.41469992134487926,
+        "mean_path_target_distance": 0.5955233162979454,
         "episodes": 100,
         "successes": 28,
         "collisions": 9,
