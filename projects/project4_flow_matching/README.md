@@ -141,7 +141,7 @@ F-LN 仍使用无条件的 U-Net 与 Euler 采样，训练时仅把 $t$ 的均�
 
 与均匀时间采样的 FM-U Euler 相比，F-LN 在 NFE 20、50、100 的 FID均略高。
 
-## Heun 二阶 sampler
+### Heun 二阶 sampler
 
 
 ### Reflow 与继续训练
@@ -195,8 +195,45 @@ $$
 
 **5. 为什么 CFG 能用于速度场，形式为何类似 epsilon CFG？**
 
-条件速度与无条件速度之差携带类别条件带来的方向变化，对两者进行线性外推，可以增强沿条件方向的分量，得到 $v_{uncond}+s(v_{cond}-v_{uncond})$。扩散模型的 epsilon 预测与速度/score 在固定时间状态下通过已知系数相关，因此用差分外推的形式相同
+扩散前向过程为：
 
+```math
+x_t=\sqrt{\bar{\alpha}_t}x_0+\sqrt{1-\bar{\alpha}_t}\epsilon
+```
+
+epsilon 与 score 的关系为：
+
+```math
+s_\theta(x_t,t)
+=
+-\frac{1}{\sqrt{1-\bar{\alpha}_t}}
+\epsilon_\theta(x_t,t)
+```
+
+对于 VP diffusion 的 probability-flow ODE：
+
+```math
+v_\theta(x_t,t)
+=
+-\frac{1}{2}\beta(t)x_t
++
+\frac{\beta(t)}{2\sqrt{1-\bar{\alpha}_t}}
+\epsilon_\theta(x_t,t)
+```
+
+因此，在固定 $`(x_t,t)`$ 下，epsilon、score 和 velocity 之间只差与条件无关的已知系数。对 conditional 与 unconditional 做差时，公共项消失，因此 CFG 可以保持相同的线性外推形式：
+
+```math
+v_{\mathrm{CFG}}
+=
+v_{\mathrm{uncond}}
++
+w\left(
+v_{\mathrm{cond}}-v_{\mathrm{uncond}}
+\right)
+```
+
+本质上，CFG 就是沿着“条件相对于无条件带来的方向变化”进行线性外推。
 ## 6. 调试记录
 
 主要记录了两个真实问题[调试日志](fair_v1/debug_log.md)：
