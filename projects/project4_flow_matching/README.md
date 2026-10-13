@@ -1,203 +1,245 @@
 # Project 4：CIFAR-10 Flow Matching 实验报告
 
-本项目在 CIFAR-10 上训练 Rectified Flow（RF）图像生成模型，实现 Euler、Heun 和
-Classifier-Free Guidance（CFG）采样，并用 FID 与 DDPM/DDIM 基线比较。README 同时记录了早期 v2 探索实验和后续 fair-v1 单种子对照实验；两轮实验使用了不同的模型、训练种子和评测设置，结果不能合并成同一张排名表。
+本报告按课程 [Project 4 Flow Matching 指南](https://github.com/Qi-StarterTrain/diffusion-project4-flow-matching)完成，覆盖 Rectified Flow 的线性路径与训练目标、Euler/Heun 数值积分、Classifier-Free Guidance（CFG）、NFE–FID 对比、进阶实验、自检问题、调试记录和复现材料。实验在 CIFAR-10 上进行，使用单个训练种子 44；所有结果是本次运行的观测值，不代表跨种子统计结论。
 
-当前主要结论以 fair-v1 为准：在 Project 1 U-Net 上直接替换为 Flow Matching 后，普通 FM-U Euler 并没有在中高 NFE 上稳定超过 DDIM；重流（F-RF）在低 NFE 下明显更好，但到 NFE 50–100 时优势消失；Heun 则在高 NFE 表现较好、低 NFE 较差。A/B/C 三个 AutoDL 节点的 checkpoint、评测 JSON、日志、样图和复现包已发布在 [GitHub Release `project4-fair-v1.0`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-fair-v1.0)。实验设置及逐项数据见 [fair-v1 README](fair_v1/README.md) 和[完整结果表](fair_v1/ARTIFACTS.md)。
+## 主要结论
 
-早期 v2 的 DiT-S、seed 42 结果仍保留在下文作为历史记录，原权重与评测归档位于 [GitHub Release `project4-v2.0`](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v2.0)。
+核心比较将 Project 1 的 U-Net 用于 DDPM/DDIM 与无条件 Flow Matching（FM-U），两者使用相同的模型家族、200,000 次训练更新和主要优化设置。评测在相同 NFE、相同 5,000 张生成样本和共同噪声输入下完成。普通 FM-U 的 Euler 结果没有稳定优于 DDIM：在 NFE 20、50、100 时，FM-U 的 FID 分别为 20.8186、17.3398、15.9969，DDIM 分别为 19.9765、16.3803、15.4242。NFE=2 时 FM-U Euler 优于 DDIM，但 NFE=4 时反而略差，说明不能据单一点宣称 FM 普遍具有低步数优势。
 
-## fair-v1 结果速览
+Reflow 模型在 NFE 2–32 的 FID 为 16.46–20.28，明显低于本次普通 FM-U 和 DDIM 的相同预算结果；到 NFE 50–100，其优势缩小并略逊于 DDIM。Heun 在低预算下误差很大，在 NFE 100 时达到 FID 14.5048。观察结果依赖训练方式、轨迹、求解器与 NFE，不能简化成某一种方法在所有预算下更好。
 
-fair-v1 用 seed 44，A 节点在相同 Project 1 U-Net 家族上训练 D-U（DDPM）和 F-U（普通 Flow Matching），并评估 F-CT、F-RF；B 节点评估条件 CFG（F-C）和 logit-normal 时间采样（F-LN）；C 节点额外评估 32.62M 参数 DiT-S（F-DiT）。所有评测使用 CIFAR-10 train 的前 5,000 张图、每档 5,000 张生成图、FID-2048、generation seed 1001 和同一固定噪声库。除 F-DiT 外，主比较使用 Project 1 U-Net；F-DiT 的架构不同，应视为进阶实验而非严格的架构控制对照。
+## 1. 任务与实验设计
 
-下表按**实际网络评估次数（NFE）**对齐，并列出最能说明差异的 20、50、100 NFE 测点。完整 2–100 NFE 曲线及采样耗时见[实验归档表](fair_v1/ARTIFACTS.md)。
+### 方法目标
+
+Rectified Flow 直接学习从高斯噪声到数据样本的速度场。本实验实现无条件 FM、类别条件 FM 与 CFG，并比较 Euler、Heun 及若干训练变体。核心问题是：在同一 U-Net 与对齐评测预算下，FM 的采样质量如何随 NFE 改变；改变时间采样、训练轨迹或求解器后，结果是否改善。
+
+### 实验矩阵
+
+| 实验 | 模型与训练方式 | 训练设置 | 用途 |
+|---|---|---:|---|
+| D-U | Project 1 U-Net，DDPM 目标 | 200,000 步 | DDIM 主基线；另测 ancestral 与 no-clip |
+| F-U | Project 1 U-Net，无条件、均匀时间采样 FM | 200,000 步 | 核心 FM 对照；Euler 与 Heun 采样 |
+| F-CT | 从 F-U checkpoint 初始化，继续 FM 训练 | 50,000 步，学习率 2×10⁻⁵ | 检查继续优化后的采样变化 |
+| F-RF | 以 F-U 为教师生成配对轨迹，再训练 FM | 50,000 对、训练 50,000 步 | 检查 Reflow 对低 NFE 采样的影响 |
+| F-C | Project 1 U-Net，类别条件 FM，标签 dropout=10% | 200,000 步 | CFG 强度扫描 |
+| F-LN | Project 1 U-Net，无条件 FM，logit-normal 时间采样 | 200,000 步 | 时间采样分布的进阶实验 |
+| F-DiT | DiT-S，32.62M 参数，无条件 FM | 200,000 步 | 更换 backbone 的进阶实验 |
+
+D-U 与 F-U 是主要对照：两者使用 seed 44、batch size 128、初始学习率 2×10⁻⁴、EMA decay 0.9999、BF16、梯度裁剪 1.0，并采用相同的预热与衰减日程；方法目标和对应概率路径不同。F-CT、F-RF 的训练预算与初始化方式不同，F-C 改为类别条件任务，F-LN 改变时间采样分布，F-DiT 改变架构。因此这些扩展实验用于分析相应设计因素，不作为“只改变一个变量”的主对照。
+
+### 统一评测协议
+
+| 项目 | 设置 |
+|---|---|
+| 数据 | CIFAR-10；真实图像取 train 集索引 0–4,999 |
+| 指标 | TorchMetrics FID，Inception feature=2048，图像按 uint8 RGB 计算 |
+| 每个测点样本量 | 5,000 张生成图像 |
+| 评测 batch size | 64 |
+| 生成随机种子 | 1001 |
+| 固定噪声库 | 所有节点共享；SHA-256：`a81b164722002a7b4649ba8519a1dff2befad6dd015a77aea97e7d28f261793e` |
+| 运行环境 | AutoDL RTX 4080 SUPER；Python 3.12.3；PyTorch 2.8.0+cu128；torchvision 0.23.0+cu128 |
+
+FID 越低越好。核心表中的 NFE 是每张图像实际调用网络的次数，而不是积分区间数。Euler 每个积分步调用一次网络；Heun 每步调用两次网络；CFG 每个积分步分别计算无条件与条件分支，因此其实际网络调用数为积分步数的两倍。所有模型使用 EMA 权重进行评测。
+
+## 2. Flow Matching 方法推导
+
+设数据图像 $x_1\sim p_{data}$，独立噪声 $\epsilon\sim\mathcal{N}(0,I)$，时间 $t\sim U[0,1]$。使用从噪声到数据的直线路径：
+
+$$
+x_t=(1-t)\epsilon+t x_1.
+$$
+
+对 $t$ 求导得到该条件路径的目标速度：
+
+$$
+\frac{d x_t}{dt}=x_1-\epsilon.
+$$
+
+网络 $v_\theta(x_t,t)$ 通过条件 Flow Matching 损失拟合该速度：
+
+$$
+\mathcal{L}_{CFM}(\theta)=\mathbb{E}_{t,x_1,\epsilon}\left[\|v_\theta(x_t,t)-(x_1-\epsilon)\|_2^2\right].
+$$
+
+训练时逐样本随机抽取 $t$ 与 $\epsilon$，构造 $x_t$，然后以 $x_1-\epsilon$ 作为回归目标。采样从 $x(0)=\epsilon$ 开始，沿 $t:0\rightarrow1$ 积分到图像端。
+
+### Euler 与 Heun
+
+给定 $K$ 个等间隔积分步，$\Delta t=1/K$，Euler 更新为
+
+$$
+x_{k+1}=x_k+\Delta t\,v_\theta(x_k,t_k).
+$$
+
+Heun 先用 Euler 预测端点，再在区间两端的速度上取平均：
+
+$$
+\tilde{x}_{k+1}=x_k+\Delta t\,v_\theta(x_k,t_k),\qquad
+x_{k+1}=x_k+\frac{\Delta t}{2}\left[v_\theta(x_k,t_k)+v_\theta(\tilde{x}_{k+1},t_{k+1})\right].
+$$
+
+Heun 每步需要两次网络评估，因此报告将它按实际 NFE 与 DDIM、Euler 对齐。低 NFE 时，一个 Heun 积分步只给出两次网络调用，并不等价于两个 Euler 积分步。
+
+### CFG
+
+F-C 训练时以 10% 概率将类别条件替换为 null 类别，使同一模型学会条件与无条件速度。采样时按下式外推：
+
+$$
+v_{CFG}(x,t,y)=v_\theta(x,t,\varnothing)+s\left[v_\theta(x,t,y)-v_\theta(x,t,\varnothing)\right],
+$$
+
+其中 $s$ 是 guidance scale。$s=0$ 对应无条件速度，$s=1$ 对应条件速度；$s>1$ 加强类别方向，但更强的条件约束可能牺牲样本变化并恶化整体质量。CFG 每个积分步要计算两种条件分支，故表中固定 20 个积分步对应 40 次网络调用。
+
+## 3. 核心结果：匹配 U-Net 的 NFE–FID 曲线
+
+![匹配 U-Net 的 NFE–FID 曲线](results/nfe_fid_curve.png)
+
+下表给出完整测量曲线。FID 数值保留原始结果，没有作平滑或单调化处理。
 
 | 实际 NFE/图 | DDIM（D-U） | FM-U Euler | FM-U Heun | F-CT Euler | F-RF Euler |
 |---:|---:|---:|---:|---:|---:|
+| 2 | 389.6992 | 174.2554 | 404.2330 | 176.9113 | **20.2793** |
+| 4 | 56.7488 | 68.3946 | 311.5474 | 69.8698 | **18.2201** |
+| 8 | 29.1369 | 31.7916 | 139.7589 | 33.1324 | **17.2271** |
+| 10 | 26.2918 | 27.6283 | 109.3425 | 28.7829 | **17.0783** |
+| 16 | 22.0175 | 21.9929 | 67.4344 | 22.9350 | **16.7047** |
 | 20 | 19.9765 | 20.8186 | 53.9351 | 21.6280 | **16.6678** |
+| 32 | 17.9058 | 18.4714 | 32.1175 | 19.1418 | **16.4586** |
 | 50 | **16.3803** | 17.3398 | 20.1862 | 17.9956 | 16.4426 |
+| 64 | **16.0098** | 16.5395 | 16.9381 | 17.2232 | 16.3228 |
 | 100 | 15.4242 | 15.9969 | **14.5048** | 16.6269 | 16.3683 |
 
-这组测点表明结果取决于训练变体和求解器：普通 FM-U Euler 在 NFE 20、50、100 的 FID 均略高于 DDIM；F-RF 在 NFE 2–32 优于 DDIM，但 NFE 50–100 略逊；Heun 到 NFE 100 才优于 DDIM。因而本实验不支持“Flow Matching 普遍在低 NFE 下优于 DDIM”，但显示重流可以改善低预算采样。以上都是单种子实测值，不是统计显著性结论。
+粗体标出每行 FID 最低的值。F-RF 在 NFE 2–32 时最低，在 NFE 50–100 时 DDIM 最低；Heun 在 NFE 100 时最低。普通 FM-U Euler 在 NFE 2、16 的结果略好于 DDIM，但在 NFE 4、8、10、20、32、50、64、100 这些点略差。不同点的差异不能替代跨种子重复实验。
 
-## 一、方法原理
+| NFE/图 | DDIM 采样秒数 | FM-U Euler 秒数 | FM-U Heun 秒数 |
+|---:|---:|---:|---:|
+| 20 | 32.62 | 29.76 | 29.70 |
+| 50 | 78.93 | 74.08 | 74.05 |
+| 100 | 154.90 | 147.73 | 147.57 |
 
-线性路径从标准高斯噪声 `epsilon` 插值到数据图像 `x1`：
+时间是在该 AutoDL GPU 上为每个测点生成 5,000 张图像的记录值，受硬件负载与实现影响；完整采样时间、日志和 metadata 见[实验结果归档](fair_v1/ARTIFACTS.md)。
 
-$$
-x_t=(1-t)\epsilon+t x_1,\qquad
-u_t=\frac{d x_t}{dt}=x_1-\epsilon,\qquad t\sim U[0,1].
-$$
+### DDPM 采样补充结果
 
-网络以均方误差预测速度场 `u_t`。采样从噪声端 `t=0` 积分到数据端 `t=1`：Euler每步调用一次网络；Heun 先预测再校正，每步调用两次。表格中的 NFE 是每张图的实际网络评估次数，不是积分步数。CFG 使用`v = v_uncond + scale * (v_cond - v_uncond)`；其每步需两路预测，计算成本为普通采样的两倍。
-
-## 二、历史 v2 实验参数配置（seed 42）
-
-### 训练配置
-
-| 参数 | FM-U（无条件） | FM-C（类别条件） |
-|---|---|---|
-| 配置文件 | [cifar10_fm_v2_unconditional.yaml](configs/cifar10_fm_v2_unconditional.yaml) | [cifar10_fm_v2_conditional.yaml](configs/cifar10_fm_v2_conditional.yaml) |
-| 条件 dropout 概率 | 1.0；所有样本使用 null token | 0.1；随机将标签替换为 null token |
-| 输出目录 | runs/fm_v2_unconditional | runs/fm_v2_conditional |
-
-| 两组共用参数 | 实际设置 |
-|---|---|
-| 模型 | DiT-S，32.62M 参数；embed dim 384、depth 12、6 heads、patch size 2 |
-| 时间嵌入尺度 | 1000 |
-| 优化器 | AdamW；learning rate 2e-4；weight decay 0 |
-| Batch size | 64 |
-| 训练步数 | 200,000 optimizer steps |
-| 随机种子 | 42 |
-| 梯度裁剪 | 1.0 |
-| EMA decay | 0.999、0.9995、0.9999 |
-| 学习率计划 | 前 2,000 步 warmup；从 100,000 步起 cosine decay；最低为初始学习率的 0.1 |
-| 日志频率 | 每 100 步 |
-| checkpoint 频率 | 每 10,000 步更新 latest.pt；每 50,000 步保存快照 |
-
-这些用时是本次运行记录，不代表其他 GPU 或负载下的固定训练时间。
-
-### 采样配置
-
-| 实验 | 条件模式 | 求解器 | 积分步数 | 实际网络评估次数/图 |
-|---|---|---|---|---|
-| FM-U NFE 扫描 | 无条件，使用 null token | Euler | 4、8、16、32、50 | 4、8、16、32、50 |
-| FM-U NFE 扫描 | 无条件，使用 null token | Heun | 4、8、16、32、50 | 8、16、32、64、100 |
-| FM-C CFG 扫描 | 无条件与类别条件预测做 CFG | Euler | 20 | 40 |
-
-### FID 评测配置
-
-| 参数 | 实际设置 |
-|---|---|
-| 指标 | TorchMetrics FrechetInceptionDistance(feature=2048, normalize=False) |
-| 真实图像 | CIFAR-10 train 的前 5,000 张（索引 0–4,999） |
-| 生成图像 | 每组 5,000 张 |
-| 图像格式 | uint8 RGB |
-| Batch size | 64 |
-| 评测随机种子 | 42；类别条件评测按 0–9 循环平衡采样 |
-| checkpoint 权重 | EMA 0.9999 |
-| 原始结果 | [fm_v2_unconditional_solvers.json](results/fm_v2_unconditional_solvers.json)、[fm_v2_conditional_cfg.json](results/fm_v2_conditional_cfg.json) |
-
-## 三、历史 v2 实测结果（DiT-S FM 与 Project 1 R5 U-Net DDIM）
-
-### FM-U 与 DDIM
-
-| 采样器 | 积分步数 | 实际 NFE/图 | FID ↓ |
+| 评测 | 实际 NFE/图 | FID ↓ | 采样时间（秒） |
 |---|---:|---:|---:|
-| FM Euler | 4 | 4 | 80.5531 |
-| FM Euler | 8 | 8 | 43.2211 |
-| FM Euler | 16 | 16 | 32.1931 |
-| FM Euler | 32 | 32 | 28.0684 |
-| FM Euler | 50 | 50 | 26.7610 |
-| FM Heun | 4 | 8 | 154.8813 |
-| FM Heun | 8 | 16 | 82.1227 |
-| FM Heun | 16 | 32 | 43.2588 |
-| FM Heun | 32 | 64 | 26.4840 |
-| FM Heun | 50 | 100 | 24.0062 |
-| Project 1 R5 + DDIM | 10 | 10 | 53.0907 |
-| Project 1 R5 + DDIM | 20 | 20 | 33.6099 |
-| Project 1 R5 + DDIM | 50 | 50 | 23.1206 |
-| Project 1 R5 + DDIM | 100 | 100 | 20.1105 |
-| Project 1 R5 + DDIM | 250 | 250 | 18.3625 |
+| DDIM | 2 | 389.6992 | 4.29 |
+| DDIM | 20 | 19.9765 | 32.62 |
+| DDIM | 100 | 15.4242 | 154.90 |
+| Ancestral | 1,000 | 13.7594 | 1,486.54 |
+| DDIM，关闭 denoised clipping | 20 | 372.2270 | 32.67 |
 
-![FM 与 Project 1 DDIM 的 NFE–FID 曲线](results/nfe_fid_curve_v2.png)
+1,000 步 ancestral 的 FID 较低，但网络调用预算远高于低 NFE 实验，不属于等成本对比。关闭 clipping 的 DDIM-20 显著恶化，因此主基线使用评测配置中的 clipping 设置。
 
-FM Euler 在 NFE 8、16 的结果与 DDIM NFE 10、20 不属于预算对齐比较。预算对齐的 NFE 50 测点中 DDIM 优于 FM Euler，NFE 100 时 DDIM 也优于已测的 FM Heun。因此，本组数据总体上不支持“FM 在低 NFE 下优于 DDIM”的结论。
+## 4. 进阶实验
 
-两边评测协议较一致，但模型与训练过程不同：FM 使用 32.62M 参数 DiT-S，DDIM 使用
-Project 1 R5 U-Net；训练架构与预算并未控制一致。每项只有 seed 42 的一次测量，没有种子
-方差估计，不能将局部差异归因于采样方法或视为稳定结论。更完整的评测记录在
-[`Project 2 的基线 JSON`](../project2_samplers/results/p1_r5_ddim_5k.json)。
+### 时间采样：logit-normal
 
-### FM-C 的 CFG 扫描
+F-LN 仍使用无条件 Project 1 U-Net 与 Euler 采样，训练时仅把 $t$ 的均匀采样改成 logit-normal。完整结果如下：
 
-固定 Euler 20 个积分步（每图 40 次实际网络评估）：
-
-| CFG scale | 实际 NFE/图 | FID ↓ |
+| Euler NFE/图 | FID ↓ | 采样时间（秒） |
 |---:|---:|---:|
-| 1.0 | 40 | 23.5773 |
-| 2.0 | 40 | **18.8105** |
-| 3.0 | 40 | 23.6983 |
-| 5.0 | 40 | 35.2425 |
-| 7.5 | 40 | 44.9110 |
+| 2 | 148.3074 | 3.90 |
+| 4 | 59.5022 | 6.39 |
+| 8 | 31.6195 | 12.27 |
+| 10 | 28.1830 | 15.20 |
+| 16 | 22.7265 | 24.47 |
+| 20 | 21.6078 | 30.28 |
+| 32 | 18.9864 | 48.35 |
+| 50 | 17.7216 | 75.67 |
+| 64 | 16.8549 | 96.67 |
+| 100 | 16.2048 | 150.73 |
 
-本次测量中 scale 2.0 的 FID 最低；scale 从 3.0 起 FID 变差。单 seed 的 FID 不代表
-跨 seed 的稳定性。
+与均匀时间采样的 FM-U Euler 相比，F-LN 在 NFE 20、50、100 的 FID 分别为 21.6078、17.7216、16.2048，均略高于 20.8186、17.3398、15.9969。该次单种子结果没有显示 logit-normal 在这些代表性预算下带来收益。
 
-![FM-C 类别条件样本网格](samples/fm_v2_conditional/class_0/euler_nfe20_cfg_cfg3.0_EMA_0.9999.png)
+### CFG 强度与样本观察
 
-## 四、fair-v1 完整对照实验（seed 44）
+固定 Euler 20 个积分步（每个分支 20 次调用，合计 NFE=40）：
 
-fair-v1 的目的，是补上早期 v2 比较中的架构差异：先在 Project 1 的 U-Net 上训练 D-U（DDPM）基线和 F-U（Flow Matching），再在相同 U-Net 家族上测试不同 FM 训练变体与采样器。C 节点的 F-DiT 保留为 DiT-S 进阶实验，不纳入架构匹配结论。
+| CFG scale | 实际 NFE/图 | FID ↓ | 采样时间（秒） |
+|---:|---:|---:|---:|
+| 1 | 40 | 18.5864 | 63.36 |
+| 2 | 40 | **18.3478** | 61.89 |
+| 3 | 40 | 23.0368 | 61.78 |
+| 5 | 40 | 33.3663 | 61.08 |
+| 7.5 | 40 | 46.1879 | 62.40 |
 
-| 节点 | 实验 | 模型/方法 | 训练步数 |
-|---|---|---|---:|
-| A | D-U | Project 1 U-Net，DDPM | 200,000 |
-| A | F-U | Project 1 U-Net，Flow Matching | 200,000 |
-| A | F-CT | Project 1 U-Net，Flow Matching 变体 | 50,000 |
-| A | F-RF | Project 1 U-Net，Reflow；从 step 10,000 恢复至 50,000 | 50,000 |
-| B | F-C | Project 1 U-Net，类别条件 Flow Matching + CFG | 200,000 |
-| B | F-LN | Project 1 U-Net，logit-normal 时间采样 | 200,000 |
-| C | F-DiT | DiT-S，32.62M 参数，Flow Matching | 200,000 |
+本次评测从 scale=3 开始出现 FID 明显退化，scale=5–7.5 退化更大。样本网格中，较高 scale 的类别特征更强、颜色和对比更极端；这只是单次网格的定性观察，不能单独证明多样性已经塌缩。图像可查看：[scale 1](results/fair_v1/F-C/cfg/fm_euler_nfe20_cfg_cfg1.png)、[scale 2](results/fair_v1/F-C/cfg/fm_euler_nfe20_cfg_cfg2.png)、[scale 7.5](results/fair_v1/F-C/cfg/fm_euler_nfe20_cfg_cfg7.5.png)。
 
-D-U 与 F-U 是主方法对照：两者使用相同的 Project 1 U-Net 架构与核心训练设置（batch 128、学习率 2×10⁻⁴、200,000 步、EMA 0.9999、BF16、seed 44），主要区别是 DDPM 与 Flow Matching 的训练目标/概率路径。F-CT 和 F-RF 使用不同训练流程且只训练到 50,000 步；F-RF 还通过教师生成的轨迹进行重流，因此这些变体与 D-U 的差异不能全部归因于“只替换扩散目标”。F-C 是类别条件模型，F-LN 改了时间采样分布，F-DiT 改了架构；它们分别回答进阶问题，不与无条件 D-U/F-U 主对照混为一谈。
+### Reflow 与继续训练
 
-以上训练 seed 均为 44。评测采用 TorchMetrics FID-2048，以 CIFAR-10 train 索引 0–4,999 为真实图像；每个测点生成 5,000 张 RGB uint8 图像，batch size 64，generation seed 1001。节点使用相同的固定高斯噪声库（SHA-256：`a81b164722002a7b4649ba8519a1dff2befad6dd015a77aea97e7d28f261793e`）。Flow Matching Euler 和 DDIM 的 NFE 是每张图的网络调用数；Heun 表格也按实际调用数计，因此与 DDIM 对齐的是 NFE 列，而非积分步数。
+F-RF 使用 F-U 教师生成 50,000 对轨迹数据，再以这些配对训练 50,000 步。重新拟合教师输运轨迹会使学习目标更贴近教师生成的端点映射，目标是在有限求解步数下减小积分误差。本实验最低测试预算为 NFE=2，没有测 NFE=1；因此数据支持“Reflow 改善本实验的极低 NFE 结果”，不支持声称已实测证明一步生成。
 
-### 条件生成与训练变体
+NFE=20 时，F-RF 的 FID 为 16.6678，对比 FM-U Euler 的 20.8186 与 DDIM 的 19.9765；NFE=100 时，F-RF 为 16.3683，略差于 FM-U Euler 的 15.9969 和 DDIM 的 15.4242。F-CT 是从 F-U 初始化后以较低学习率继续优化的模型，训练预算与主对照不同；它在各预算点均未超过 DDIM。两项结果说明，低 NFE 改善与训练轨迹/初始化有关，不能归结为 FM 目标本身。
 
-F-C 固定 Euler 20 个积分步，即每张图 40 次模型调用。FID 在 CFG scale=2 时最低，scale 增大到 3 以上后质量下降：
+### DiT-S backbone
 
-| CFG scale | 实际 NFE/图 | FID ↓ |
+F-DiT 使用 32.62M 参数 DiT-S，训练 200,000 步，保持 CIFAR-10 与评测协议一致，但架构和网络容量都不同于 Project 1 U-Net。结果作为 backbone 进阶实验单独阅读：
+
+| Euler NFE/图 | FID ↓ | 采样时间（秒） |
 |---:|---:|---:|
-| 1 | 40 | 18.5864 |
-| 2 | 40 | **18.3478** |
-| 3 | 40 | 23.0368 |
-| 5 | 40 | 33.3663 |
-| 7.5 | 40 | 46.1879 |
+| 2 | 294.5080 | 3.90 |
+| 4 | 138.9369 | 6.74 |
+| 8 | 61.0893 | 13.33 |
+| 10 | 48.8798 | 16.68 |
+| 16 | 33.2682 | 26.65 |
+| 20 | **28.9317** | 33.52 |
+| 32 | 30.2821 | 53.22 |
+| 50 | 31.0744 | 82.93 |
+| 64 | 31.7211 | 106.48 |
+| 100 | 31.7707 | 166.95 |
 
-F-LN 是无条件 Euler。代表性结果为 NFE 20：21.6078、NFE 50：17.7216、NFE 100：16.2048。它在高 NFE 下接近 F-U Euler，但本次数据没有显示它在所有预算点都更优。
+FID 在 NFE=20 达到本表最低值，此后没有随 NFE 增加而下降。单次结果说明单纯增加采样调用数不能修正当前模型/训练配置的误差；由于架构不同，不能把该表与 U-Net 主对照合并为“FM 与 DDPM”的因果比较。
 
-F-DiT 是不同架构的进阶结果：Euler NFE 2/8/20/50/100 的 FID 分别为 294.5080、61.0893、28.9317、31.0744、31.7707；本次最低点出现在 NFE 20，而非最高 NFE。它和 U-Net 结果可以展示架构/训练组合的表现，但不单独用于证明 RF 或某种求解器普遍更好。
+## 5. Project 4 自检问题
 
-### 额外基线与结果边界
+**1. 线性路径的速度目标如何得到？**
 
-- D-U 的完整 1,000 步 ancestral 采样 FID 为 13.7594，采样耗时 1,486.54 秒；这是高计算预算参考，不能与 20 或 100 NFE 视为等成本结果。
-- 关闭去噪 clipping 后的 DDIM-20 FID 为 372.2270，说明该基线的 clipping 设定对本次结果影响很大。
-- FID 不保证随 NFE 单调下降：例如 F-RF 从 NFE 64 的 16.3228 到 NFE 100 的 16.3683 略有回升。README 保留实测值，不对曲线作单调化处理。
-- 每个配置只有 seed 44 的一次实验。共同噪声和一致的 5,000 张样本协议改善了配对比较，但没有跨种子方差，不能据此声称统计显著或推广到所有模型、数据集和算力预算。
+由 $x_t=(1-t)\epsilon+t x_1$ 对时间求导，得到 $u_t=x_1-\epsilon$。这个速度不依赖 $t$，但输入位置 $x_t$ 随 $t$ 改变；训练网络就是让 $v_\theta(x_t,t)$ 拟合该速度。
 
-逐档 FID、采样秒数、checkpoint 哈希、训练/评测 metadata 与归档说明见 [fair-v1 实验归档表](fair_v1/ARTIFACTS.md)。下载并校验 A/B/C 的 checkpoint 与复现包：
+**2. 为什么 CFM 与 FM 的梯度相同，但损失值可以不同？**
+
+记条件目标为 $U=u_t(x_t\mid x_1)$，给定 $(x_t,t)$ 的条件期望为 $m=\mathbb{E}[U\mid x_t,t]$，即边缘速度场。平方误差可分解为
+
+$$
+\mathbb{E}\|v_\theta-U\|^2=\mathbb{E}\|v_\theta-m\|^2+\mathbb{E}\|U-m\|^2.
+$$
+
+第二项是条件目标相对边缘速度的方差，与参数 $\theta$ 无关。因此两种目标对 $\theta$ 的梯度相同；但 CFM 数值包含额外的非负常数，训练损失值无需相等。
+
+**3. 为什么低 NFE 下可能出现 FM 与 DDIM 的差距？本实验是否验证 FM 普遍占优？**
+
+低 NFE 时，数值积分误差更受速度场曲率、轨迹长度、模型误差和求解器阶数影响；直线且易积分的轨迹可能在粗网格上有利，DDIM 也可能因其训练目标与离散采样器匹配而更稳。实际数据没有显示普通 FM-U 在整个低 NFE 区间稳定占优：NFE=2 时 FM-U Euler 更好，NFE=4 时 DDIM 更好，NFE=8–100 多数测点 DDIM 略好。表现突出的低预算方法是 F-RF，说明训练轨迹处理会改变比较结果。
+
+**4. 为什么 Reflow 可能改善一步或少步采样？本实验验证到什么程度？**
+
+教师模型先给噪声与生成端点建立配对，再用这些端点重新训练流场，减少训练目标对原始随机配对的依赖，使模型更贴近教师输运映射；若映射更直，少量离散步便可能覆盖更长路径而不产生过大误差。本实验在 NFE=2–32 上观察到 F-RF 优于 DDIM，但没有 NFE=1 测点，不能把“两次调用的结果”写成一步实测结论。
+
+**5. 为什么 CFG 能用于速度场，形式为何类似 epsilon CFG？**
+
+条件速度与无条件速度之差携带类别条件带来的方向变化。对两者线性外推，可以增强沿条件方向的分量，得到 $v_{uncond}+s(v_{cond}-v_{uncond})$。扩散模型的 epsilon 预测与速度/score 在固定时间状态下通过已知系数相关，因此用差分外推的形式相同；这并不保证较大的 $s$ 总能提升 FID，本次 scale=3 后的退化正体现了过强引导的代价。
+
+## 6. 调试记录与实现验证
+
+实现过程中记录了三类真实问题，完整复现和修复经过见[调试日志](fair_v1/debug_log.md)：
+
+1. Heun 的解析 ODE 测试在 NFE=64 时误差约 $1.1\times10^{-4}$，超过原阈值；调整验证预算后确认误差随预算下降，并检查了 Heun 精度和 NFE 计数。
+2. GPU 上 CFG 的 scale=1 与条件分支出现约 $8\times10^{-5}$ 的浮点差异；确认公式语义正确后，把边界容差改为 $5\times10^{-4}$，scale=0/1 检查通过。
+3. 监控页前端拼接与复现文档曾有格式问题；修复后 Python 编译通过，本地服务页面和状态 API 均返回 HTTP 200，并能读到训练步数。
+
+训练、评测、模型实现和配置入口见 [实验代码与运行说明](fair_v1/README.md)。NFE 曲线由 [`plot_report_curve.py`](plot_report_curve.py) 根据报告中的原始评测值生成。训练与评测日志、逐项 JSON、样图、运行 metadata、固定噪声库和 checkpoint 校验值都收录于 [Release 复现包](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-fair-v1.0)；各方法的完整 FID、耗时、权重哈希与资产列表见[结果归档](fair_v1/ARTIFACTS.md)。
+
+从仓库根目录下载并校验完整实验资产：
 
 ```bash
-bash projects/project4_flow_matching/fair_v1/download_artifacts.sh artifacts/project4-fair-v1 all
+bash projects/project4_flow_matching/fair_v1/download_artifacts.sh artifacts/project4 all
 ```
 
-### 结论
+数据集未打包在 Release 中，需按 CIFAR-10 官方数据准备。Release 中包含可用于推理的 checkpoint 与复现所需源码、日志、评测结果及样图；逐文件 SHA-256 用于核验下载完整性。
 
-在架构匹配的 U-Net 比较中，普通 FM-U Euler 于 NFE 20/50/100 的 FID 分别为 20.8186/17.3398/15.9969，略高于 DDIM 的 19.9765/16.3803/15.4242；这不支持普通 Flow Matching 在中高 NFE 下稳定优于 DDIM。F-RF 在 NFE 2–32 明显更好，但 NFE 50–100 时稍逊；Heun 在低预算下较差，到 NFE 100 才取得本组较好结果。较准确的结论是：采样质量取决于训练目标、重流策略、求解器和 NFE；这次单种子实验看到 F-RF 的低预算收益，但没有证据支持“FM 普遍低步数更优”。
+## 7. 结论与限制
 
-## 五、代码与结果文件说明
+在相同 Project 1 U-Net 家族和主要训练设置下，普通 Flow Matching + Euler 没有在测量的 NFE 区间稳定优于 DDIM；中高 NFE 的 FID 略差，NFE=2 则更好。Reflow 在 NFE 2–32 显示了清楚的低预算优势，Heun 在高 NFE 100 获得本组最低 FID，但低 NFE 结果较差。Logit-normal 时间采样没有在本次代表性测点带来提升；类别 CFG 在 scale=2 达到本次最低 FID，scale 增至 3 以上后质量快速下降；DiT-S 曲线在 NFE=20 后没有改善。
 
-| 路径 | 内容 |
-|---|---|
-| [`train.py`](train.py) | 训练、EMA、checkpoint 保存与恢复 |
-| [`sample.py`](sample.py) | Euler / Heun 图像采样与 CFG |
-| [`eval_fid.py`](eval_fid.py) | FID 与 NFE 扫描，输出评测 JSON |
-| [`plot_nfe_curve.py`](plot_nfe_curve.py) | 由评测结果绘制 NFE–FID 曲线 |
-| [`export_checkpoint.py`](export_checkpoint.py) | 将续训 checkpoint 导出为推理权重 |
-| [`model/dit.py`](model/dit.py)、[`model/unet.py`](model/unet.py) | DiT 与简化 conditional U-Net |
-| [`results/fm_v2_unconditional_solvers.json`](results/fm_v2_unconditional_solvers.json) | FM-U Euler / Heun 的原始 FID 结果 |
-| [`results/fm_v2_conditional_cfg.json`](results/fm_v2_conditional_cfg.json) | FM-C CFG 扫描的原始 FID 结果 |
-| [`results/nfe_fid_curve_v2.png`](results/nfe_fid_curve_v2.png) | FM 与 Project 1 DDIM 的 NFE–FID 曲线 |
-| [`repro_manifest_v2.json`](repro_manifest_v2.json) | 软硬件、配置、数据、权重哈希和评测协议 |
-| [`fair_v1/README.md`](fair_v1/README.md)、[`fair_v1/ARTIFACTS.md`](fair_v1/ARTIFACTS.md) | 最终 fair-v1 的执行说明、A/B/C 完整 FID 表和 Release 清单 |
-
-[GitHub Release project4-v2.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v2.0) 提供历史 v2 的 EMA 0.9999 推理权重和评测归档；checkpoint 不存入 Git 仓库。最终 fair-v1 的 checkpoint 与复现包位于 [project4-fair-v1.0 Release](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-fair-v1.0)。
-
-| Release 文件 | 用途 | 大小（bytes） | SHA-256 |
-|---|---|---:|---|
-| `project4-v2-unconditional-step200000.pt` | 历史 v2 FM-U，step 200,000 | 522,147,167 | `b75cbe3d4f9aeb16c66cb53e4acb03f9c2c6a18421efd945f78475cd2e114571` |
-| `project4-v2-conditional-step200000.pt` | 历史 v2 FM-C，step 200,000 | 522,146,099 | `25666b32e914002778825a02f8e14c89f9f5ff081f9dded9f3f0ad6e0283c5aa` |
-| `project4_v2_results_only.tar.gz` | 评测 JSON、样本网格、训练 CSV、训练与评测日志 | 654,483 | `e8ea255f9ae63f666b47bbdab30d494307285d9ba30b7276e248ce800bf8802a` |
+评测通过相同真实数据、共同噪声库、相同样本量与固定 generation seed 尽量减少协议差异，但每个训练配置只有 seed 44 一次运行，FID 也只是有限样本估计。因而结论限于本次 CIFAR-10、模型与训练设置；跨种子方差、其他数据集和模型容量仍需额外实验验证。
