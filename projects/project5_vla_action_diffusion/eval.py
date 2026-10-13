@@ -81,6 +81,15 @@ def bc_sample_action(model, image, state, horizon=32, action_dim=2, device="cuda
     return model(zeros, t, image=image, state=state).clamp(-1.0, 1.0)
 
 
+def classify_episode_outcome(info):
+    """Classify a terminal step, treating a collision as failure even at goal."""
+    if info.get("collision", False):
+        return "collision"
+    if info.get("success", False):
+        return "success"
+    return "timeout"
+
+
 # =============================================================================
 # TODO 21: Implement closed-loop evaluation
 # =============================================================================
@@ -143,6 +152,7 @@ def evaluate(model, scheduler, cfg, device, n_episodes=100, exec_steps=10,
     successes = collisions = timeouts = 0
     total_steps = 0
     final_distances = []
+    path_target_distances = []
     saved_rollouts = 0
     mode_counts = {}
     mode_successes = {}
@@ -171,6 +181,7 @@ def evaluate(model, scheduler, cfg, device, n_episodes=100, exec_steps=10,
         generator = torch.Generator(device=device)
         generator.manual_seed(episode_seed)
         positions = [obs["state"].copy()]
+        episode_target_distances = [float(np.linalg.norm(obs["state"] - env.target_pos))]
         action_chunk = None
         info = {"success": False, "collision": False, "dist_to_target": float("inf"),
                 "step_count": env.MAX_STEPS}
@@ -195,12 +206,17 @@ def evaluate(model, scheduler, cfg, device, n_episodes=100, exec_steps=10,
                     )[0].cpu().numpy()
             obs, _, done, info = env.step(action_chunk[step % exec_steps])
             positions.append(obs["state"].copy())
+            episode_target_distances.append(
+                float(np.linalg.norm(obs["state"] - env.target_pos))
+            )
             if done:
                 break
 
         total_steps += info["step_count"]
         final_distances.append(info["dist_to_target"])
-        if info["success"]:
+        path_target_distances.append(float(np.mean(episode_target_distances)))
+        outcome = classify_episode_outcome(info)
+        if outcome == "success":
             successes += 1
             if mode is not None:
                 mode_successes[mode] = mode_successes.get(mode, 0) + 1
@@ -223,7 +239,7 @@ def evaluate(model, scheduler, cfg, device, n_episodes=100, exec_steps=10,
                 fig.savefig(rollout_dir / f"success_ep{ep:03d}.png")
                 plt.close(fig)
                 saved_rollouts += 1
-        elif info["collision"]:
+        elif outcome == "collision":
             collisions += 1
         else:
             timeouts += 1
@@ -237,6 +253,9 @@ def evaluate(model, scheduler, cfg, device, n_episodes=100, exec_steps=10,
         "timeout_rate": timeouts / n_episodes,
         "avg_steps": total_steps / n_episodes,
         "mean_final_distance": float(np.mean(final_distances)),
+        # Mean distance-to-goal over all states along each rollout, then across
+        # episodes. This is a path-progress metric, not expert-trajectory ADE.
+        "mean_path_target_distance": float(np.mean(path_target_distances)),
         "episodes": n_episodes,
         "successes": successes,
         "collisions": collisions,

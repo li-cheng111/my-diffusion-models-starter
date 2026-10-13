@@ -8,7 +8,8 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dataset import DemoDataset, collect_demos
-from eval import ddim_sample_action, evaluate, make_ddim_timesteps
+from eval import (classify_episode_outcome, ddim_sample_action, evaluate,
+                  make_ddim_timesteps)
 from env import Reach2DEnv
 from model import DiffusionPolicy, ResNetVisionEncoder, VisionEncoder
 from train import (DDPMScheduler, _masked_mse, behavior_cloning_loss,
@@ -124,6 +125,13 @@ def test_closed_loop_returns_complete_metrics():
     assert result["episodes"] == 2
     assert 0 <= result["success_rate"] <= 1
     assert result["successes"] + result["collisions"] + result["timeouts"] == 2
+    assert result["mean_path_target_distance"] >= 0
+
+
+def test_collision_takes_precedence_over_simultaneous_success():
+    assert classify_episode_outcome({"success": True, "collision": True}) == "collision"
+    assert classify_episode_outcome({"success": True, "collision": False}) == "success"
+    assert classify_episode_outcome({"success": False, "collision": False}) == "timeout"
 
 
 def test_diffusion_evaluation_is_repeatable():

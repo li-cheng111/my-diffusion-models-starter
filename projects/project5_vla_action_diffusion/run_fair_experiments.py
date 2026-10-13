@@ -82,6 +82,7 @@ def aggregate(run_root: Path, conditions: list[dict], seed: int) -> dict:
             "timeout_rate": row["timeout_rate"],
             "avg_steps": row["avg_steps"],
             "mean_final_distance": row["mean_final_distance"],
+            "mean_path_target_distance": row.get("mean_path_target_distance"),
             "evaluation": row,
         }
     return summary
@@ -96,10 +97,12 @@ def write_report(summary: dict, output: Path) -> None:
         "episodes. Wilson intervals quantify episode variation for this one "
         "trained checkpoint; training-seed variation is not estimated.",
         "",
-        "| condition | method | H | masked | train seed | success (Wilson 95% CI) | collision | timeout | avg steps |",
-        "|---|---|---:|:---:|---:|---:|---:|---:|---:|",
+        "| condition | method | H | masked | train seed | success (Wilson 95% CI) | collision | timeout | avg steps | final distance | path target distance |",
+        "|---|---|---:|:---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for name, row in summary["conditions"].items():
+        path_distance = row.get("mean_path_target_distance")
+        path_distance_text = f"{path_distance:.4f}" if path_distance is not None else "—"
         lines.append(
             f"| {name} | {row['method']} | {row['horizon']} | "
             f"{'yes' if row['mask_padding'] else 'no'} | 42 | "
@@ -107,7 +110,9 @@ def write_report(summary: dict, output: Path) -> None:
             f"({100 * row['success_rate_wilson95'][0]:.1f}–"
             f"{100 * row['success_rate_wilson95'][1]:.1f}%) | "
             f"{100 * row['collision_rate']:.1f}% | "
-            f"{100 * row['timeout_rate']:.1f}% | {row['avg_steps']:.2f} |"
+            f"{100 * row['timeout_rate']:.1f}% | {row['avg_steps']:.2f} | "
+            f"{row['mean_final_distance']:.4f} | "
+            f"{path_distance_text} |"
         )
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

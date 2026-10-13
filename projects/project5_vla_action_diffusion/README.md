@@ -55,6 +55,8 @@
 
 ## 复现
 
+评估同时报告末端距离（FDE）与整段轨迹的目标距离：`mean_path_target_distance` 先对单条 rollout 的所有已访问位置（包括初始位置）计算到目标的欧氏距离均值，再跨 episode 求均值。它反映整个过程的目标接近程度，不是相对专家轨迹的 ADE；因此不能解释为轨迹模仿误差。碰撞与到达若在同一步同时发生，按碰撞失败计数。
+
 实验日志记录的软件环境为 Python 3.12.3、PyTorch 2.8.0+cu128。请先按本机平台安装匹配的 PyTorch 与 torchvision，再在项目目录安装其余依赖并运行自检：
 
 ```bash
@@ -84,8 +86,28 @@ python plot_bonus.py
 - `model.py`、`train.py`、`eval.py`：策略结构、训练与闭环评估；`configs/`：实验配置。
 - [公平矩阵汇总](results/fair_seed42/fair_ablation.md)；[公平矩阵指标](results/fair_seed42/fair_summary.json)；[先导消融](results/ablation.md)；[实验日志](logs/exp_log.md)。
 - `results/rollouts/`、`results/bonus_rollouts/`：示例轨迹；`results/*.json`：实验指标。
-- [详细报告](report.md)：方法、公式与分析；[公平实验方案](FAIR_EXPERIMENT_PLAN.md)：对照协议；[调试记录](debug_log.md)：实现与运行问题。
+- [公平实验方案](FAIR_EXPERIMENT_PLAN.md)：对照协议；[调试记录](debug_log.md)：实现与运行问题。
 - [实验日志模板](experiment_log_template.md)是通用模板，其中示例数据不是本项目结果。
+
+## 从 GitHub Release 恢复并重评估
+
+训练好的公平矩阵 checkpoint 与原始结果作为 GitHub Release 附件提供，避免把大型二进制文件塞进 Git 历史。克隆本仓库 `main` 后，在项目目录执行以下命令即可从 Release 恢复模型，并用当前版本评估代码重新跑 100 个固定 episode；新结果写到独立目录，不会覆盖发布时的原始结果：
+
+```bash
+mkdir -p assets/release assets/restored
+cd assets/release
+base=https://github.com/li-cheng111/my-diffusion-models-starter/releases/download/project5-fair-seed42-v1.0.0
+curl -fLO "$base/SHA256SUMS"
+curl -fLO "$base/project5-fair-seed42-checkpoints.tar.gz"
+curl -fLO "$base/project5-fair-seed42-results.tar.gz"
+curl -fLO "$base/project5-vla-action-diffusion-source-14a93fd.tar.gz"
+sha256sum -c SHA256SUMS
+cd ../..
+tar -xzf assets/release/project5-fair-seed42-checkpoints.tar.gz -C assets/restored
+python eval_checkpoint_archive.py --checkpoint-root assets/restored/runs/project5_fair --run-root runs/project5_release_eval --episodes 100 --seed-start 10000
+```
+
+`eval_checkpoint_archive.py --resume` 会跳过已经生成 `eval.json` 的条件，适合断线后接续；正式复现训练矩阵则使用上一节的 `run_fair_experiments.py` 命令。`SHA256SUMS` 同时校验 checkpoint、结果和 source 三个 Release 附件。Release source 是当时的源码快照；实验应以当前克隆的 `main` 作为评估代码。
 
 ## 限制
 
