@@ -1,0 +1,9 @@
+d0bd447c276c08a2188835c827c2f7a5c77eab58c533f99d1544c6e04ef26710  project4-fair-v1-fdit-seed44-step200000.pt
+515997d69d8401917e7294d960f0df43e76174ba5dbce621ba22fd6271727072  project4-fair-v1-fdit-seed44-repro.tar.gz
+b57e30c02aa03b47e587ced38fd91471ac3dc8e50a11be2056ce20b5370df78e  project4-fair-v1-a-d-u-seed44-step200000.pt
+ce3f58438a2ed29bdbff4e97ba2849dc09959b787bdc533f8fc5cf7c70963b96  project4-fair-v1-a-f-u-seed44-step200000.pt
+8532bc0335214f71271896a33de8459aaa5b103239c9b2780185e8a1e06b9d59  project4-fair-v1-a-f-ct-seed44-step50000.pt
+0fea3d161b7eb9a9d4396f75dab438e230f9fe1910914aa1e4b4f25167bed5cd  project4-fair-v1-a-f-rf-seed44-step50000.pt
+0953f923b183d98dc422508909297472fab62826d89efa2f64de7adf87cfaf92  project4-fair-v1-b-f-c-seed44-step200000.pt
+797f1ca10a66aa37f3be785f1d4c7d8bf369a91b405cbc9ec5708e68213d425c  project4-fair-v1-b-f-ln-seed44-step200000.pt
+79caaec8cb920155fb0e279a152ffb4a679aaef1bdf0419399647a374ce2dec2  project4-fair-v1-node-b-seed44-repro.tar.gz

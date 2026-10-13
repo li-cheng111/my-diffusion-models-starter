@@ -5,7 +5,7 @@ Classifier-Free Guidance（CFG）采样，并用 FID 与 Project 1 的 DDIM 基�
 
 > 仓库还保留 v1 的配置、结果和复现清单，供历史参考。
 
-本仓库还提供 Project 4 fair-v1 严格对照实验记录；AutoDL 节点 C 已完成的 F-DiT 训练与评估、Release 下载步骤见 [fair-v1 README](fair_v1/README.md)。本次归档仅覆盖 F-DiT，不代表 fair-v1 全部实验均已完成。
+本仓库还提供 Project 4 fair-v1 单种子严格对照实验；A/B/C 三个 AutoDL 节点的训练 checkpoint、日志、评测结果和下载步骤见 [fair-v1 README](fair_v1/README.md) 与 [实验归档表](fair_v1/ARTIFACTS.md)，Release 为 [project4-fair-v1.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-fair-v1.0)。
 
 ## 一、方法原理
 

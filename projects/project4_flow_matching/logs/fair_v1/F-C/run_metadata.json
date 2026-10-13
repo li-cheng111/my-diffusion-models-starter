@@ -1,0 +1,66 @@
+{
+  "experiment": "F-C",
+  "method": "fm",
+  "seed": 44,
+  "config": {
+    "experiment": "F-C",
+    "method": "fm",
+    "seed": 44,
+    "data": {
+      "root": "./data",
+      "num_workers": 6
+    },
+    "model": {
+      "type": "p1_unet_conditional",
+      "num_classes": 10,
+      "in_channels": 3,
+      "out_channels": 3,
+      "base_channels": 128,
+      "channel_mult": [
+        1,
+        2,
+        2,
+        2
+      ],
+      "num_res_blocks": 2,
+      "attn_resolutions": [
+        16
+      ],
+      "dropout": 0.1,
+      "image_size": 32,
+      "skip_layout": "full"
+    },
+    "train": {
+      "batch_size": 128,
+      "microbatch_size": 128,
+      "max_steps": 200000,
+      "lr": 0.0002,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "weight_decay": 0.0,
+      "warmup_steps": 5000,
+      "decay_start_step": 150000,
+      "min_lr": 2e-05,
+      "grad_clip": 1.0,
+      "ema_decay": 0.9999,
+      "precision": "bf16",
+      "t_sampling": "uniform",
+      "cond_drop_prob": 0.1,
+      "log_every": 100,
+      "save_every": 10000,
+      "snapshot_every": 50000
+    }
+  },
+  "initial_state_sha256": "63b97930a8d19f07190ca0d8265f75f3d231880323b79e8f82bc608444e6c840",
+  "parent_checkpoint_sha256": null,
+  "git_revision": "ed3357e16904e9c3d4fc5128eddb75aedd4c7d08",
+  "torch": "2.8.0+cu128",
+  "cuda": "12.8",
+  "device": "NVIDIA GeForce RTX 4080 SUPER",
+  "effective_batch_size": 128,
+  "microbatch_size": 128,
+  "gradient_accumulation_steps": 1,
+  "augmentation": "CIFAR-10 train; deterministic per-epoch/index horizontal flip p=0.5"
+}

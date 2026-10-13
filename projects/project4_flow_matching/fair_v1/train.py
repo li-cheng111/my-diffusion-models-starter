@@ -252,6 +252,7 @@ def train(cfg, output_dir, seed, resume=None, init_checkpoint=None):
         if device.type == "cuda" and checkpoint["rng"].get("cuda") is not None:
             torch.cuda.set_rng_state_all([state.cpu() for state in checkpoint["rng"]["cuda"]])
         init_sha = checkpoint.get("initial_state_sha256", init_sha)
+        parent_sha = checkpoint.get("parent_checkpoint_sha256", parent_sha)
         print(f"resumed step={step} epoch={epoch} batch_offset={batch_offset}", flush=True)
 
     metadata = {
