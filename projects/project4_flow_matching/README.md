@@ -122,7 +122,7 @@ $$
 
 ## 4. 进阶实验
 
-### 时间采样：logit-normal
+### 1）时间采样：logit-normal
 
 F-LN 仍使用 uncond U-Net 与 Euler 采样，训练时只把 $t$ 的均匀采样改为 logit-normal。
 
@@ -141,7 +141,7 @@ F-LN 仍使用 uncond U-Net 与 Euler 采样，训练时只把 $t$ 的均匀采�
 
 F-LN 在 NFE=2、4 时优于 FM-U ，NFE=8 时基本持平。从 NFE=10 到 100，F-LN 则高出约 0.21–0.79 FID，说明 logit-normal 可能有利于极粗的采样网格。
 
-### Heun 二阶 sampler
+### 2）Heun 二阶 sampler
 
 下表给出相同 F-U checkpoint、相同预算下的 FID 与实测采样时间：
 
@@ -160,7 +160,7 @@ F-LN 在 NFE=2、4 时优于 FM-U ，NFE=8 时基本持平。从 NFE=10 到 100�
 
 Heun 在低NFE下明显落后，直到 NFE=100 才优于 Euler 的效果。
 
-### Reflow 与继续训练
+### 3）Reflow 与继续训练
 
 F-RF 先用 F-U 教师从 50,000 个噪声样本生成对应端点（教师采样使用 Heun、NFE=200），再用这 50,000 对数据训练 50,000 步。Reflow 用教师模型产生的配对重新拟合速度场，目标是让学习到的轨迹更直接、在粗积分网格上减少离散误差。F-CT 则从 F-U checkpoint 继续训练 50,000 步；它不是 Reflow，且训练预算与主模型不同。
 
@@ -181,7 +181,7 @@ F-RF 先用 F-U 教师从 50,000 个噪声样本生成对应端点（教师采�
 
 F-RF 在 NFE=2–32 的 FID 最低，在 NFE=50–100则是 DDIM 略优，显示了 F-RF 在低预算采样的明显改善。
 
-### DiT-S backbone
+### 4）DiT-S backbone
 
 F-DiT 使用 32.62M 参数 DiT-S，训练 200,000 步，下表把 DiT-S 与其他无条件模型和求解器设定按实际 NFE 并列，粗体为该行最低值。
 
