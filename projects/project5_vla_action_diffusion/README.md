@@ -140,9 +140,11 @@ FM 完成对 DDPM 训练目标的替换，成功率点估计与 BC 接近。
 
 ### 2）Multi-modal demo 数据集：两个 target
 
-本条件下有两个 target 坐标：$`(-0.65, 0.55)`$ 与 $`(0.65, 0.55)`$。
+#### 2.1 两种单目标条件（不是同一观测下的双模态）
 
-H=16 视觉 DDPM 在 100 个 episode 上总体成功 97 次；按目标模式统计如下。
+本实验每个 episode 只绘制一个目标，目标坐标在 $`(-0.65, 0.55)`$ 与 $`(0.65, 0.55)`$ 之间切换。原有 97% 成功率说明模型能处理两种不同的目标条件，但由于同一张图像中没有同时出现两个目标，它本身不能证明同一观测下存在两种动作模式。
+
+H=16 视觉 DDPM 在 100 个 episode 上总体成功 97 次；按目标条件统计如下。
 
 | 目标模式 | 目标坐标 | Episode 数 | 成功数 | 成功率 |
 |---|---:|---:|---:|---:|
@@ -161,7 +163,30 @@ H=16 视觉 DDPM 在 100 个 episode 上总体成功 97 次；按目标模式统
   </tr>
 </table>
 
-*图 3. Multi-modal 实验中分别以左侧和右侧目标为条件的成功闭环轨迹。*
+*图 3. 两种单目标条件下的成功闭环轨迹；每个 episode 只显示其中一个目标。*
+
+#### 2.2 同一观测下同时显示双目标
+
+为检验真正的同观测多模态，新环境在每张图像中同时绘制左、右两个目标，分别位于 $`(-0.65, 0.55)`$ 和 $`(0.65, 0.55)`$；到达任意目标即成功，并记录实际到达的目标。训练数据按场景成对采集：同一场景的两条专家轨迹从完全相同的初始状态、图像、障碍物和双目标布局出发，分别前往左、右目标。目标编号不作为策略输入，策略只接收图像与状态，因此不同路线由模型采样产生，而不是由显式目标标签指定。
+
+使用一个训练种子（42），从现有 H=16 视觉 DDPM checkpoint 初始化并微调 5,000 步。正式评测在 100 个固定场景上，每个场景使用 20 个推理噪声样本，共 2,000 个 episode；零样本模型与微调模型使用相同环境种子、噪声种子、DDIM 20 步和每 4 步重规划协议。20 个噪声样本是推理采样次数，不是训练种子。
+
+| 模型 | 成功率 | 碰撞率 | 超时率 | 平均步数 | 平均末端距离 | 到达目标 G0 / G1 | 双目标覆盖场景 | 稳定双目标覆盖场景 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 旧 checkpoint 零样本 | 0.95%（19/2,000） | 14.00% | 85.05% | 87.90 | 0.5487 | 19 / 0 | 0/100 | 0/100 |
+| 同观测配对数据微调（5k） | **81.40%（1,628/2,000）** | **8.15%** | **10.45%** | **48.24** | **0.1248** | **699 / 929** | **57/100** | **34/100** |
+
+“双目标覆盖场景”表示同一固定初始场景的 20 次采样中，至少各有一次成功到达 G0 和 G1；“稳定双目标覆盖场景”要求每个目标至少各成功 3 次。微调后两种目标都被采到，且 57% 的固定场景覆盖了两种模式，构成同一初始观测下生成不同目标路线的直接证据；但稳定覆盖率为 34%，说明模式覆盖仍不均衡，不能据此宣称所有场景都稳定具备双模态。零样本 checkpoint 在双目标图像这一新输入分布上几乎不能完成任务，说明微调是必要的。
+
+![同一初始观测下，微调策略从不同采样中分别到达左、右目标的闭环轨迹](results/simultaneous_multimodal/finetuned_rollouts.png)
+
+*图 4. 同观测双目标实验的微调模型轨迹。每个小图固定同一初始场景，蓝线与橙线分别表示成功到达左、右目标的不同采样轨迹；障碍物与两个目标在每次采样中保持不变。图中展示覆盖双目标的代表性场景，整体覆盖率按全部 100 个场景统计。*
+
+零样本对照未覆盖任何双目标场景，以下图中显示的少数成功轨迹均到达左侧目标。
+
+![同一初始观测下零样本 checkpoint 的闭环轨迹](results/simultaneous_multimodal/zero_shot_rollouts.png)
+
+*图 5. 零样本模型在同时显示双目标的新输入条件下的轨迹；2,000 次采样中仅 19 次成功，且全部到达 G0。*
 
 ### 3）ImageNet-pretrained ResNet-18 替换小 CNN
 
@@ -205,7 +230,7 @@ ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参�
 
 2. **多模态：绕开干扰物有左右两条合理路径。用 MSE 直接回归动作（Pure BC） 在这种情况下会输出什么？为什么 diffusion 不会有这个问题？**
 
-  若同一观测有绕障碍物左、右两条合理轨迹，MSE 往往趋向两种动作的条件均值，均值轨迹可能穿过障碍，或落在数据里没有出现过的中间模式，扩散策略可通过不同噪声样本表达多个动作分布模式。但本项目的双目标实验是目标位置不同、图像条件也不同，证明了两种目标条件都可完成，**没有证明同一观测下生成左右两种绕行轨迹**。
+  若同一观测有绕障碍物左、右两条合理轨迹，MSE 往往趋向两种动作的条件均值，均值轨迹可能穿过障碍，或落在数据里没有出现过的中间模式，扩散策略则有机会通过不同噪声样本表达多个动作分布模式。原先“每回合只显示一个目标”的实验确实没有证明同一观测下的多模态；新增的同时显示双目标实验在配对的相同初始观测上分别监督左右目标路线，并在 57/100 个固定场景中观察到两种成功模式。该结果支持扩散策略学习到多模态行为，但 34/100 个场景达到每个目标至少 3 次成功，说明模式覆盖仍不完整。
 
 3. **条件：阶段 2 与阶段 3 的成功率差多少？这个差值衡量的到底是什么？ 如果把干扰物坐标也加进 state，这个实验还能说明问题吗？**
 
@@ -230,9 +255,11 @@ ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参�
 |---|---|---|
 | 环境与数据 | [`env.py`](env.py)、[`dataset.py`](dataset.py)、[`obs_utils.py`](obs_utils.py) | 环境、专家数据与观测条件处理。 |
 | 模型与配置 | [`model.py`](model.py)、[`train.py`](train.py)、[`eval.py`](eval.py)、[`configs/`](configs/) | 策略结构、训练与闭环评估入口、实验配置。 |
+| 同观测双目标多模态 | [`eval_multi_target.py`](eval_multi_target.py)、[`plot_multi_target.py`](plot_multi_target.py)、[`results/simultaneous_multimodal/summary.json`](results/simultaneous_multimodal/summary.json) | 100 个固定场景、每场景 20 次采样的零样本/微调配对评测汇总。 |
 | 矩阵与历史消融 | [矩阵汇总](results/fair_seed42/fair_ablation.md)、[矩阵指标](results/fair_seed42/fair_summary.json)、[`results/ablation.md`](results/ablation.md)、[`logs/exp_log.md`](logs/exp_log.md) | 当前矩阵结果、历史消融归档与实验日志。 |
 | 条件评估与扩展结果 | [state-only 评估](results/eval_state.json)、[视觉评估](results/eval_vision.json)、`results/*.json` | 条件参照及各扩展实验的逐项指标。 |
 | 轨迹与训练记录 | [`results/rollouts/`](results/rollouts/)、[`results/bonus_rollouts/`](results/bonus_rollouts/)、`logs/train_spatial.log`、`logs/train_resnet18*.log`、[`results/metrics/`](results/metrics/) | 成功轨迹、ResNet 收敛图数据来源与训练指标。 |
+| 同观测双目标轨迹图 | [`results/simultaneous_multimodal/finetuned_rollouts.png`](results/simultaneous_multimodal/finetuned_rollouts.png)、[`results/simultaneous_multimodal/zero_shot_rollouts.png`](results/simultaneous_multimodal/zero_shot_rollouts.png) | 相同双目标场景下，配对微调模型与原 checkpoint 的闭环轨迹对比。 |
 | Release：checkpoint | `project5-fair-seed42-checkpoints.tar.gz` | 矩阵模型权重。 |
 | Release：结果归档 | `project5-fair-seed42-results.tar.gz`、`project5-fair-seed42-reeval-c062751.tar.gz` | 实验原始结果与复评结果。 |
 | Release 版本 | [project5-fair-seed42-v1.0.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-fair-seed42-v1.0.0) | 上述复现文件所在的 GitHub Release。 |

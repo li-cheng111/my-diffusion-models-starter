@@ -1,0 +1,68 @@
+{
+  "experiment": "simultaneously_visible_two_goal_multimodality",
+  "environment": {
+    "goal_positions": [
+      [-0.65, 0.55],
+      [0.65, 0.55]
+    ],
+    "both_goals_visible_in_each_observation": true,
+    "success_condition": "reach_either_goal",
+    "goal_id_provided_to_policy": false
+  },
+  "training": {
+    "training_seed": 42,
+    "paired_scenes": 500,
+    "fine_tuning_steps": 5000,
+    "initial_checkpoint": "ckpts/model_final.pt",
+    "device": "MTT S4000 (MUSA)",
+    "note": "Each paired scene contains left-goal and right-goal expert trajectories with identical initial state, image, obstacle layout, and both visible goals."
+  },
+  "evaluation_protocol": {
+    "scenes": 100,
+    "inference_noise_samples_per_scene": 20,
+    "episodes_per_model": 2000,
+    "environment_seed_start": 50000,
+    "noise_seed_start": 900000,
+    "same_scenes_and_noise_seeds_for_models": true,
+    "sampler": "DDIM",
+    "sampling_steps": 20,
+    "replan_every_environment_steps": 4,
+    "inference_samples_are_training_seeds": false
+  },
+  "models": {
+    "zero_shot_existing_checkpoint": {
+      "successes": 19,
+      "collisions": 280,
+      "timeouts": 1701,
+      "success_rate": 0.0095,
+      "collision_rate": 0.14,
+      "timeout_rate": 0.8505,
+      "average_steps": 87.898,
+      "mean_final_distance": 0.5486527069,
+      "target_success_counts": [
+        19,
+        0
+      ],
+      "scenes_reaching_both_goals": 0,
+      "scenes_with_at_least_3_successes_per_goal": 0
+    },
+    "paired_data_fine_tuned_checkpoint": {
+      "fine_tuning_steps": 5000,
+      "successes": 1628,
+      "collisions": 163,
+      "timeouts": 209,
+      "success_rate": 0.814,
+      "collision_rate": 0.0815,
+      "timeout_rate": 0.1045,
+      "average_steps": 48.2395,
+      "mean_final_distance": 0.124826986,
+      "target_success_counts": [
+        699,
+        929
+      ],
+      "scenes_reaching_both_goals": 57,
+      "scenes_with_at_least_3_successes_per_goal": 34
+    }
+  },
+  "interpretation": "The paired fine-tuned policy demonstrates both goal-conditioned route modes from the same initial observation in 57 of 100 fixed scenes, with repeated coverage (at least three successes per goal) in 34 scenes. The result supports learned multimodal behavior but shows incomplete and imbalanced coverage; it is a single training-seed result."
+}
