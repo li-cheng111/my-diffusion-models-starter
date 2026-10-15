@@ -19,12 +19,20 @@ esac
 
 mkdir -p "$ROOT" "$RUN_ROOT" "$LOG_DIR" "$MONITOR_DIR" "$ROOT/manifest"
 
-if [[ ! -d "$REPO_DIR/.git" ]]; then
+if [[ -d "$REPO_DIR/.git" ]]; then
+  if git -C "$REPO_DIR" fetch origin main && git -C "$REPO_DIR" checkout -q origin/main; then
+    :
+  elif [[ -f "$PROJECT_DIR/train.py" ]]; then
+    echo "GitHub fetch failed; continuing with the pre-provisioned source snapshot." >&2
+  else
+    echo "Git fetch failed and no local project snapshot is available." >&2
+    exit 12
+  fi
+elif [[ ! -f "$PROJECT_DIR/train.py" ]]; then
   git clone --filter=blob:none --sparse https://github.com/li-cheng111/my-diffusion-models-starter.git "$REPO_DIR"
   git -C "$REPO_DIR" sparse-checkout set projects/project1_ddpm
 else
-  git -C "$REPO_DIR" fetch origin main
-  git -C "$REPO_DIR" checkout -q origin/main
+  echo "Using the pre-provisioned project source snapshot."
 fi
 
 cd "$PROJECT_DIR"
@@ -54,7 +62,8 @@ if [[ ! -d data/cifar-10-batches-py ]]; then
   "$PYTHON_BIN" -c 'from dataset import get_dataset; get_dataset("cifar10", root="./data", image_size=32, train=True, augment=False)'
 fi
 
-printf 'git_commit=%s\npython=%s\n' "$(git -C "$REPO_DIR" rev-parse HEAD)" "$($PYTHON_BIN --version 2>&1)" > "$ROOT/manifest/seed${SEED}_environment.txt"
+SOURCE_COMMIT="${SOURCE_COMMIT:-$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo snapshot-unknown)}"
+printf 'git_commit=%s\npython=%s\n' "$SOURCE_COMMIT" "$($PYTHON_BIN --version 2>&1)" > "$ROOT/manifest/seed${SEED}_environment.txt"
 "$PYTHON_BIN" - <<'PY' >> "$ROOT/manifest/seed${SEED}_environment.txt"
 import torch
 try:

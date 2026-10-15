@@ -65,6 +65,11 @@ git clone --filter=blob:none --sparse https://github.com/li-cheng111/my-diffusio
 git -C /root/autodl-tmp/schedule50/repo sparse-checkout set projects/project1_ddpm
 ```
 
+The runner can also use a pre-provisioned source snapshot under
+`/root/autodl-tmp/schedule50/repo/projects/project1_ddpm` if GitHub cloning is
+unavailable; in that case set `SOURCE_COMMIT` to the snapshot's exact commit
+hash when launching it.
+
 Then launch the assigned pair inside `screen`:
 
 ```bash
