@@ -48,7 +48,12 @@ def compute_fid(
             "Install torchmetrics[image] and torch-fidelity before FID evaluation."
         ) from exc
 
-    fid = FrechetInceptionDistance(feature=2048, normalize=False).to(device)
+    # MUSA can run the denoising model, but some torchmetrics state updates
+    # (notably ``real_features_sum += ...``) are not implemented by muDNN.
+    # Keep generation on the accelerator and accumulate Inception statistics
+    # on CPU for a backend-independent FID calculation.
+    metric_device = torch.device("cpu") if device.type == "musa" else device
+    fid = FrechetInceptionDistance(feature=2048, normalize=False).to(metric_device)
     real_loader = torch.utils.data.DataLoader(
         real_dataset,
         batch_size=batch_size,
@@ -60,7 +65,7 @@ def compute_fid(
     for batch in real_loader:
         if loaded >= num_samples:
             break
-        batch = batch[: min(batch.shape[0], num_samples - loaded)].to(device)
+        batch = batch[: min(batch.shape[0], num_samples - loaded)].to(metric_device)
         fid.update(_to_uint8_rgb(batch, in_channels), real=True)
         loaded += batch.shape[0]
 
@@ -75,7 +80,7 @@ def compute_fid(
             clip_denoised=clip_denoised,
             prediction_type=prediction_type,
         )
-        fid.update(_to_uint8_rgb(samples, in_channels), real=False)
+        fid.update(_to_uint8_rgb(samples.to(metric_device), in_channels), real=False)
         generated += current_batch
     return float(fid.compute().item())
 
@@ -240,3 +245,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
