@@ -82,6 +82,7 @@ def compute_fid(
         batch = batch[: min(batch.shape[0], num_samples - loaded)].to(device)
         fid.update(_to_uint8_rgb(batch, in_channels), real=True)
         loaded += batch.shape[0]
+        print(f"FID real features: {loaded}/{num_samples}", flush=True)
 
     generated = 0
     while generated < num_samples:
@@ -96,6 +97,7 @@ def compute_fid(
         )
         fid.update(_to_uint8_rgb(samples, in_channels), real=False)
         generated += current_batch
+        print(f"FID generated samples: {generated}/{num_samples}", flush=True)
     return float(fid.compute().item())
 
 
