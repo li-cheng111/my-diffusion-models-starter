@@ -88,12 +88,26 @@ class Monitor:
         if not active and queue_status.get("state") in {"waiting_gpu", "starting"}:
             current_path, current = queue_path.parent, queue_status
         results = []
+        summarized_runs = set()
+        summary_fields = ("method", "success_rate", "collision_rate", "timeout_rate",
+                          "avg_steps", "both_target_coverage_rate",
+                          "stable_both_target_coverage_rate", "target_success_counts")
         for p in runs:
+            status = _read_json(p / "status.json")
+            summary = status.get("eval")
+            if isinstance(summary, dict) and "success_rate" in summary:
+                name = p.relative_to(self.root).as_posix()
+                results.append({"name": name, **{key: summary.get(key)
+                                                  for key in summary_fields}})
+                summarized_runs.add(name)
             for path in p.glob("eval*.json"):
+                name = p.relative_to(self.root).as_posix()
+                if name in summarized_runs or path.stat().st_size > 262144:
+                    continue
                 payload = _read_json(path)
                 if payload:
-                    name = p.relative_to(self.root).as_posix() + "/" + path.stem
-                    results.append({"name": name, **payload})
+                    results.append({"name": name + "/" + path.stem,
+                                    **{key: payload.get(key) for key in summary_fields}})
         done = sum(1 for _, s in statuses if s.get("state") == "completed")
         total = self.total_runs or max(len(runs), 1)
         detail = f"{len(runs)} 个运行目录，{done} 个已完成"
