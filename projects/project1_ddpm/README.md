@@ -51,8 +51,7 @@ FID 改进、学习率筛选、采样诊断和复现说明。
 
 ```math
 \begin{aligned}
-x_t &= \sqrt{\bar{\alpha}_t}\,x_0 \\
-    &\quad+ \sqrt{1 - \bar{\alpha}_t}\,\epsilon
+x_t &= \sqrt{\bar{\alpha}_t}\,x_0\quad+ \sqrt{1 - \bar{\alpha}_t}\,\epsilon
 \end{aligned}
 ```
 
