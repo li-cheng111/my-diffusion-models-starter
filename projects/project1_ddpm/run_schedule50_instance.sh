@@ -19,7 +19,9 @@ esac
 
 mkdir -p "$ROOT" "$RUN_ROOT" "$LOG_DIR" "$MONITOR_DIR" "$ROOT/manifest"
 
-if [[ -d "$REPO_DIR/.git" ]]; then
+if [[ -f "$REPO_DIR/.source_commit" && -f "$PROJECT_DIR/train.py" ]]; then
+  echo "Using pre-provisioned source snapshot $(cat "$REPO_DIR/.source_commit"); skipping remote fetch."
+elif [[ -d "$REPO_DIR/.git" ]]; then
   if git -C "$REPO_DIR" fetch origin main && git -C "$REPO_DIR" checkout -q origin/main; then
     :
   elif [[ -f "$PROJECT_DIR/train.py" ]]; then
@@ -62,7 +64,7 @@ if [[ ! -d data/cifar-10-batches-py ]]; then
   "$PYTHON_BIN" -c 'from dataset import get_dataset; get_dataset("cifar10", root="./data", image_size=32, train=True, augment=False)'
 fi
 
-SOURCE_COMMIT="${SOURCE_COMMIT:-$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo snapshot-unknown)}"
+SOURCE_COMMIT="${SOURCE_COMMIT:-$(cat "$REPO_DIR/.source_commit" 2>/dev/null || git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo snapshot-unknown)}"
 printf 'git_commit=%s\npython=%s\n' "$SOURCE_COMMIT" "$($PYTHON_BIN --version 2>&1)" > "$ROOT/manifest/seed${SEED}_environment.txt"
 "$PYTHON_BIN" - <<'PY' >> "$ROOT/manifest/seed${SEED}_environment.txt"
 import torch
