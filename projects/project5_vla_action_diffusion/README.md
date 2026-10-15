@@ -262,4 +262,5 @@ ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参�
 | 同观测双目标轨迹图 | [`results/simultaneous_multimodal/finetuned_rollouts.png`](results/simultaneous_multimodal/finetuned_rollouts.png)、[`results/simultaneous_multimodal/zero_shot_rollouts.png`](results/simultaneous_multimodal/zero_shot_rollouts.png) | 相同双目标场景下，配对微调模型与原 checkpoint 的闭环轨迹对比。 |
 | Release：checkpoint | `project5-fair-seed42-checkpoints.tar.gz` | 矩阵模型权重。 |
 | Release：结果归档 | `project5-fair-seed42-results.tar.gz`、`project5-fair-seed42-reeval-c062751.tar.gz` | 实验原始结果与复评结果。 |
+| Release：同观测双目标复现包 | [project5-simultaneous-multimodal-v1.0.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-simultaneous-multimodal-v1.0.0) | 配对演示数据、微调 checkpoint、评测 JSON、源码、日志、轨迹图与 SHA-256 校验文件。 |
 | Release 版本 | [project5-fair-seed42-v1.0.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-fair-seed42-v1.0.0) | 上述复现文件所在的 GitHub Release。 |
