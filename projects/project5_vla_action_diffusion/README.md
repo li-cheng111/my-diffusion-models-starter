@@ -44,8 +44,11 @@ $$
 |FM + vision|H=16，图像 + agent state，Euler 10 步|成功 87%，碰撞 7%，超时 6%；平均 29.53 步，末端距离 0.0987|与 BC 接近，比 DDPM 效果好|
 |DDPM + vision Chunk 8 vs 32 vs 64|masked H=8/32/64 成功率 89%/48%/26%；unmasked 91%/66%/28%|masked 超时率 4%/46%/73%；unmasked 2%/27%/63%|H=8 效果最优；H=32/64 超时率明显上升|
 
-![训练损失曲线](results/loss_curve.png)
-*图 1. 训练损失曲线*
+<p align="center">
+  <img src="results/loss_curve.png" alt="训练损失曲线" />
+  <br />
+  <em>图 1. 训练损失曲线</em>
+</p>
 ### 1）Pure BC (no diffusion)
 
 Pure BC 直接以图像和 agent 位置回归 H=16 动作块，不经过生成式采样。
@@ -73,7 +76,7 @@ no vision(state-only) 直接获得目标位置，却没有障碍物坐标，视�
 
 以下闭环图展示四条成功轨迹，作为定性示例。
 
-<table>
+<table align="center">
   <tr>
     <td align="center"><img src="results/rollouts/success_ep000.png" alt="视觉 DDPM 成功轨迹 episode 0" width="320"/><br/><sub>Episode 0</sub></td>
     <td align="center"><img src="results/rollouts/success_ep001.png" alt="视觉 DDPM 成功轨迹 episode 1" width="320"/><br/><sub>Episode 1</sub></td>
@@ -84,7 +87,7 @@ no vision(state-only) 直接获得目标位置，却没有障碍物坐标，视�
   </tr>
 </table>
 
-*图 2. H=16 视觉 DDPM 的四条成功轨迹示例。蓝线为策略轨迹，圆点为起点，红星为目标，灰色方块为障碍物*
+<p align="center"><em>图 2. H=16 视觉 DDPM 的四条成功轨迹示例。蓝线为策略轨迹，圆点为起点，红星为目标，灰色方块为障碍物</em></p>
 
 ### 4）FM + vision
 
@@ -120,9 +123,11 @@ BC 为 88%，视觉 DDPM 为 81%，在实验条件下FM的效果相较于DDPM更
 
 下图展示扩展实验的总体结果，并标示多目标评测中的目标位置与分模式成功率。
 
-![扩展实验闭环结果与双目标示意](results/bonus_summary.png)
-
-*图 3. 扩展实验结果及多目标实验中的目标位置与成功率。*
+<p align="center">
+  <img src="results/bonus_summary.png" alt="扩展实验闭环结果与双目标示意" />
+  <br />
+  <em>图 3. 扩展实验结果及多目标实验中的目标位置与成功率。</em>
+</p>
 
 ### 1）Flow Matching 替代 DDPM
 
@@ -152,9 +157,11 @@ FM 完成对 DDPM 训练目标的替换，成功率点估计与 BC 接近。
 **“稳定双目标覆盖”** 要求每个目标至少各成功 3 次。
 微调后两种目标都被采到，且 57% 的固定场景覆盖了两种模式，构成同一初始观测下生成不同目标路线的直接证据。但稳定覆盖率为 34%，说明模式覆盖仍不均衡，双模态性能并不稳定。
 
-![同一初始观测下，微调策略从不同采样中分别到达左、右目标的闭环轨迹](results/simultaneous_multimodal/finetuned_rollouts.png)
-
-*图 4. 同观测双目标实验的微调模型轨迹。每个小图固定同一初始场景，蓝线与橙线分别表示成功到达左、右目标的不同采样轨迹，障碍物与两个目标在每次采样中保持不变。*
+<p align="center">
+  <img src="results/simultaneous_multimodal/finetuned_rollouts.png" alt="同一初始观测下，微调策略从不同采样中分别到达左、右目标的闭环轨迹" />
+  <br />
+  <em>图 4. 同观测双目标实验的微调模型轨迹。每个小图固定同一初始场景，蓝线与橙线分别表示成功到达左、右目标的不同采样轨迹，障碍物与两个目标在每次采样中保持不变。</em>
+</p>
 
 ### 3）ImageNet-pretrained ResNet-18 替换小 CNN
 
@@ -181,14 +188,14 @@ ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参�
 
 成功率点估计相近，但碰撞率由 3% 升至 20%，说明策略具备一定迁移能力。下方为移动障碍测试中的两条成功轨迹。
 
-<table>
+<table align="center">
   <tr>
     <td align="center"><img src="results/bonus_rollouts/moving_success_ep000.png" alt="移动障碍成功轨迹 episode 0" width="320"/><br/><sub>Episode 0</sub></td>
     <td align="center"><img src="results/bonus_rollouts/moving_success_ep005.png" alt="移动障碍成功轨迹 episode 5" width="320"/><br/><sub>Episode 5</sub></td>
   </tr>
 </table>
 
-*图 5. 移动障碍环境中的两条成功策略轨迹，灰色方块表示回合结束时的障碍位置。*
+<p align="center"><em>图 5. 移动障碍环境中的两条成功策略轨迹，灰色方块表示回合结束时的障碍位置。</em></p>
 
 ## 五、自查问题
 
