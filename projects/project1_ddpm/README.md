@@ -60,7 +60,7 @@ x_t &= \sqrt{\bar{\alpha}_t}\,x_0 \\
 默认目标为：
 
 ```math
-\mathcal{L}_{\mathrm{simple}} = \operatorname{mean}\!\left[\left(\epsilon - \epsilon_\theta(x_t,t)\right)^2\right]
+\mathcal{L}_{\mathrm{simple}} = \mathrm{mean}\!\left[\left(\epsilon - \epsilon_\theta(x_t,t)\right)^2\right]
 ```
 
 反向采样从标准高斯噪声开始，按 $`T-1`$ 到 $`0`$ 逐步计算 posterior mean；$`t=0`$ 不再加入随机噪声。
