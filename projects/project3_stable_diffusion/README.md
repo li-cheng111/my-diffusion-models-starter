@@ -1,6 +1,6 @@
 # Project 3：Stable Diffusion 实验报告
 
-## 1. 实验内容
+## 一. 实验内容
 
 本项目以 Stable Diffusion 1.5 为对象，逐段复现并检查文本到图像的 latent diffusion 路径，完成手写推理、参数扫描、VAE 解剖、LoRA 微调、Canny ControlNet、cross-attention 可视化，以及 LDM/SDXL 阅读笔记。
 
@@ -14,7 +14,7 @@
 | LDM §3–4 与 SDXL 阅读笔记 | 已完成 | notes/reading_note_ldm.md、reading_notes/ldm_sdxl_reading_note.md |
 | 环境、复现与 debug | 环境快照、运行日志和真实问题记录 | outputs/autodl_environment.json、logs/、本报告第 10 节 |
 
-## 2. Stable Diffusion 结构
+## 二. Stable Diffusion 结构
 
 文本到图像的主要张量流：
 
@@ -32,7 +32,7 @@
 | 去噪 latent | (1, 4, 64, 64) | UNet 预测与 scheduler 更新后的 latent |
 | 解码 RGB | (1, 3, 512, 512) | 解码前按 VAE scaling factor 0.18215 还原 latent 尺度 |
 
-## 4. A：Stable Diffusion 推理框架实现
+## 三. 任务A：Stable Diffusion 推理框架实现
 
 文件：01_inference_walkthrough.ipynb，该 notebook 逐步运行 tokenizer、CLIP、噪声初始化、DDIM、CFG、scheduler 更新和 VAE decode。
 
@@ -57,7 +57,7 @@
 ### Reading Notes：LDM和SDXL
 链接：[reading_note_ldm.md](https://github.com/li-cheng111/my-diffusion-models-starter/blob/main/projects/project3_stable_diffusion/notes/reading_note_ldm.md)
 
-## 5. B：CFG、steps 与 sampler 扫描
+## 四. 任务B：CFG、steps 与 sampler 扫描
 
 脚本：02_parameter_sweep.py。full preset 在同一 prompt、negative prompt 和 seed=42 下改变一个因素或绘制二维交互图。prompt 为 **“a photograph of a cat wearing a wizard hat, fantasy art”**，negative prompt 为 **“low quality, blurry”**；输出尺寸 512×512。
 
@@ -95,7 +95,7 @@
 
 高清图像链接：[sweep_cfg.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_cfg.png) · [sweep_steps.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_steps.png) · [sweep_sampler.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_sampler.png) · [grid_2d.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/grid_2d.png)
 
-## 6. C：VAE anatomy
+## 五. 任务C：VAE anatomy
 
 文件：05_vae_anatomy.ipynb。使用 encoder posterior 的 mode，记录四个 latent channel、原图/重构图、局部细节 crop 和 metrics JSON。
 
@@ -128,7 +128,7 @@
 
 **分析结论：** 本次 `vae_metrics.json` 记录的输入是 `outputs/sweep_smoke/grid_2d.png`，即带有小图和文字标签的参数扫描拼图，不是自然图像基准。MSE=`0.001979`、PSNR=`27.04 dB` 只衡量这张输入与重构图的像素差异；图中大块明暗与主体轮廓基本保留，但细边缘、网格分隔和小字更容易变软。四个 latent 通道的标准差为 `0.598–1.361`，显示它们是统计特性不同的学习表征，而不是 RGB 的一一对应通道。该单图结果可说明压缩/重构现象，不能推广成 VAE 对自然图像的总体保真度结论。
 
-## 7. D：LoRA 风格微调与独立加载
+## 六. 任务D：LoRA 风格微调与独立加载
 
 文件：03_lora_finetune.py、evaluate_lora.py。
 
@@ -151,9 +151,9 @@ evaluate_lora.py 在独立 SD pipeline 中评估 base、checkpoint-0200、0400�
 
 **分析结论：** 首个记录 loss 为 `0.2810`、末步为 `0.1527`，但最后 50 步均值是 `0.2282`；batch=1 下单步 loss 波动明显，因此只能说末步低于首步，不能声称全程单调收敛。对照图中，200 步已能看到更明显的笔触和色彩风格变化，之后变化较渐进；部分画面也出现类似伪字/签名的细节，说明风格增强不等于所有内容质量持续提高。另一个关键限制是训练 prompt 为 `a painting in the style of van gogh`，评估 prompt 却使用 `in sks style`：本实验验证了 adapter 可脱离训练进程加载并改变输出，但不能据此说 `sks` 是学到的触发词，或严格量化风格泛化能力。
 
-## 8. E：Canny ControlNet 与 cross-attention
+## 七. 任务E：Canny ControlNet 与 cross-attention
 
-### 8.1 Canny ControlNet
+### 1） Canny ControlNet
 
 文件：04_controlnet_demo.ipynb。输入图先用 Canny 提取边缘（thresholds=[100, 200]），然后固定结构，使用四种 prompt 做重绘；另加要求 **“a realistic golden retriever dog, high detail”** 的冲突 prompt，观察文本与边缘条件争夺控制权。生成 seed=42。
 
@@ -177,7 +177,7 @@ evaluate_lora.py 在独立 SD pipeline 中评估 base、checkpoint-0200、0400�
 
 **分析结论：** 四种 prompt 明显改变了画面的色调和渲染质感，同时保留了输入的主要轮廓/布局，体现了“结构条件”和“文本风格”可以分工控制。但本次输入本身是由多个小图与标签构成的复杂拼图，边缘条件并非干净的单一物体轮廓；冲突结果也没有清晰呈现金毛犬。因此它只能说明该输入和当前控制强度下，复杂边缘会强烈约束构图，不能作为“ControlNet 总会压过 prompt”的证据。后续若要比较猫/狗语义冲突，应换用轮廓清楚的单物体输入，并固定其他参数做成对对照。
 
-### 8.2 Cross-attention challenge
+### 2） Cross-attention challenge
 
 脚本：06_cross_attention_visualization.py。prompt 为 **“a red cat wearing a blue wizard hat in a green forest”**，seed=42、30 steps、CFG=7.5。自定义 attention processor 在 CFG 条件分支采集 prompt 相关 attention，在去噪中后段聚合 16×16 和 32×32 query map，并排除 BOS、EOS 及 padding token。
 
@@ -199,7 +199,7 @@ evaluate_lora.py 在独立 SD pipeline 中评估 base、checkpoint-0200、0400�
 
 **分析结论：** 热图呈现了 token 的空间响应差异，但 cat、wizard、hat 的响应并不总与对应物体轮廓一一重合，且彼此有重叠、向上下文扩散的现象；forest 的响应也覆盖较大背景区域。这说明 cross-attention 提供的是 token—空间软关联，不是目标检测或像素级分割。这里的图还聚合了多个层、时间步，并只显示 16×16/32×32 分辨率，适合观察关注趋势，不宜把亮区当成精确物体边界或因果解释。
 
-## 9. 自查问题与结论
+## 八. 自查问题与回答
 
 ### 推理与采样
 
@@ -222,7 +222,7 @@ evaluate_lora.py 在独立 SD pipeline 中评估 base、checkpoint-0200、0400�
 11. **为什么 SD 出 512×512 而不是 1024×1024？** SD 1.5 的典型训练分辨率是 512×512，并非模型不能生成 1024。VAE 将 512 图像压到 `4×64×64` latent；改成 1024 时 latent 为 `4×128×128`，空间位置数变为 4 倍，显存和计算开销明显增加。高分辨率常采用分阶段放大或专门的高分辨率模型。
 12. **为什么 SD 画不好文字？** SD 的文本条件主要帮助 **表达场景语义**，不是逐字排版监督；训练图文数据通常也**没有精确的字符位置/字形标注**。再加上 **512 分辨率和 VAE 压缩容易损失细笔画**，模型难以稳定保证拼写、字符数量和布局，因此文字常变形或拼错。
 
-## 10. 代码、产物与 Release 索引
+## 九. 代码、产物与 Release 索引
 
 ### 实验代码与仓库内结果
 
