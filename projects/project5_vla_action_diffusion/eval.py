@@ -12,6 +12,7 @@ import torch
 import yaml
 
 from env import Reach2DEnv
+from device_utils import get_device
 from model import DiffusionPolicy
 from obs_utils import state_dim_for, state_from_obs
 from train import DDPMScheduler, load_config
@@ -299,7 +300,8 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
+    print(f"Using device: {device}")
 
     model = DiffusionPolicy(
         horizon=cfg["chunk_size"],

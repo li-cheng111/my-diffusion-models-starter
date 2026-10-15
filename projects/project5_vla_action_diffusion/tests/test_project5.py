@@ -7,7 +7,7 @@ import torch.nn as nn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dataset import DemoDataset, collect_demos
+from dataset import DemoDataset, collect_demos, collect_multi_target_demos
 from eval import (classify_episode_outcome, ddim_sample_action, evaluate,
                   make_ddim_timesteps)
 from env import Reach2DEnv
@@ -154,6 +154,40 @@ def test_bonus_target_modes_and_moving_distractors():
     before = env.distractors.copy()
     env.step([0.0, 0.0])
     assert not np.allclose(before, env.distractors)
+
+
+def test_simultaneous_goals_are_visible_and_either_is_success():
+    goals = [[-0.65, 0.55], [0.65, 0.55]]
+    env = Reach2DEnv(n_distractors=0, goal_positions=goals, seed=7)
+    obs = env.reset(seed=7)
+    assert np.array_equal(obs["goal_positions"], np.asarray(goals, dtype=np.float32))
+    env.agent_pos = np.asarray(goals[1], dtype=np.float32) + np.asarray([0.0, -0.05], dtype=np.float32)
+    _, _, done, info = env.step([0.0, 1.0])
+    assert done and info["success"] and info["reached_target_id"] == 1
+
+
+def test_multitarget_demos_pair_identical_initial_observations(tmp_path):
+    path = tmp_path / "paired.pkl"
+    collect_multi_target_demos(n_scenes=1, chunk_size=8, n_distractors=0,
+                               save_path=str(path), seed=70, max_attempts=20)
+    dataset = DemoDataset(path)
+    starts = [row for row in dataset.data if row["pair_start"]]
+    assert len(starts) == 2
+    assert starts[0]["scene_id"] == starts[1]["scene_id"]
+    assert starts[0]["route_mode"] != starts[1]["route_mode"]
+    assert np.array_equal(starts[0]["image"], starts[1]["image"])
+    assert np.array_equal(starts[0]["state"], starts[1]["state"])
+
+
+def test_musa_device_helper_falls_back_or_selects_accelerator():
+    from device_utils import get_device, make_generator
+
+    device = get_device()
+    generator = make_generator(device, 123)
+    first = torch.randn(4, device=device, generator=generator)
+    generator = make_generator(device, 123)
+    second = torch.randn(4, device=device, generator=generator)
+    assert torch.equal(first, second)
 
 
 def test_resnet_encoder_offline_shape():

@@ -34,14 +34,23 @@ class Reach2DEnv:
 
     def __init__(self, n_distractors=2, image_size=64, seed=None,
                  target_choices=None, moving_distractors=False,
-                 distractor_speed=0.025):
+                 distractor_speed=0.025, goal_positions=None):
         self.n_distractors = n_distractors
         self.image_size = image_size
         self.target_choices = (np.asarray(target_choices, dtype=np.float32)
                                if target_choices is not None else None)
+        self.goal_positions_spec = (np.asarray(goal_positions, dtype=np.float32)
+                                    if goal_positions is not None else None)
+        if self.target_choices is not None and self.goal_positions_spec is not None:
+            raise ValueError("Use target_choices or goal_positions, not both")
         if self.target_choices is not None and (
                 self.target_choices.ndim != 2 or self.target_choices.shape[1] != 2):
             raise ValueError("target_choices must have shape (num_modes, 2)")
+        if self.goal_positions_spec is not None and (
+                self.goal_positions_spec.ndim != 2
+                or self.goal_positions_spec.shape[1] != 2
+                or len(self.goal_positions_spec) < 1):
+            raise ValueError("goal_positions must have shape (num_goals, 2)")
         self.moving_distractors = bool(moving_distractors)
         self.distractor_speed = float(distractor_speed)
         self.distractor_velocities = np.zeros((0, 2), dtype=np.float32)
@@ -54,12 +63,17 @@ class Reach2DEnv:
         # Random positions, ensure agent not too close to target/distractor
         while True:
             self.agent_pos = self.rng.uniform(-0.8, 0.8, 2)
-            if self.target_choices is None:
+            if self.goal_positions_spec is not None:
+                self.goal_positions = self.goal_positions_spec.copy()
+                self.target_pos = self.goal_positions[0].copy()
+            elif self.target_choices is None:
                 self.target_pos = self.rng.uniform(-0.8, 0.8, 2)
+                self.goal_positions = self.target_pos[None, :].copy()
             else:
                 mode = self.rng.randint(len(self.target_choices))
                 self.target_pos = self.target_choices[mode].copy()
-            dist_to_target = np.linalg.norm(self.agent_pos - self.target_pos)
+                self.goal_positions = self.target_pos[None, :].copy()
+            dist_to_target = np.linalg.norm(self.agent_pos - self.goal_positions, axis=1).min()
             if dist_to_target > 0.4:
                 break
         # Distractors: place them roughly between agent and target to make task non-trivial
@@ -68,7 +82,7 @@ class Reach2DEnv:
             for _ in range(50):  # max attempts
                 pos = self.rng.uniform(-0.8, 0.8, 2)
                 if (np.linalg.norm(pos - self.agent_pos) > 0.2
-                    and np.linalg.norm(pos - self.target_pos) > 0.2):
+                    and np.linalg.norm(pos - self.goal_positions, axis=1).min() > 0.2):
                     self.distractors.append(pos)
                     break
         self.distractors = np.array(self.distractors) if len(self.distractors) else np.zeros((0, 2))
@@ -102,8 +116,11 @@ class Reach2DEnv:
             self.distractors = np.clip(next_pos, -0.8, 0.8)
 
         # Check success / collision
-        dist_to_target = np.linalg.norm(self.agent_pos - self.target_pos)
-        success = dist_to_target < self.SUCCESS_THRESHOLD
+        target_distances = np.linalg.norm(self.goal_positions - self.agent_pos, axis=1)
+        dist_to_target = float(target_distances.min())
+        reached_target_id = (int(target_distances.argmin())
+                             if dist_to_target < self.SUCCESS_THRESHOLD else None)
+        success = reached_target_id is not None
         collision = False
         if len(self.distractors) > 0:
             dists = np.linalg.norm(self.distractors - self.agent_pos, axis=1)
@@ -115,7 +132,9 @@ class Reach2DEnv:
             "success": bool(success),
             "collision": bool(collision),
             "step_count": self.step_count,
-            "dist_to_target": float(dist_to_target),
+            "dist_to_target": dist_to_target,
+            "target_distances": target_distances.astype(float).tolist(),
+            "reached_target_id": reached_target_id,
         }
         return self.observation(), reward, done, info
 
@@ -140,6 +159,7 @@ class Reach2DEnv:
             "image": self.render(),
             "state": self.agent_pos.copy().astype(np.float32),
             "goal": self.target_pos.copy().astype(np.float32),
+            "goal_positions": self.goal_positions.copy().astype(np.float32),
         }
 
     def _world_to_pixel(self, pos):
@@ -171,10 +191,11 @@ class Reach2DEnv:
             cx, cy = self._world_to_pixel(d)
             half = max(3, int(self.DISTRACTOR_RADIUS * self.image_size / 2))
             self._draw_square(img, cx, cy, half, np.array([120, 120, 120], dtype=np.uint8))
-        # Target: red star (drawn as red square for simplicity)
-        cx, cy = self._world_to_pixel(self.target_pos)
+        # All valid goals are visible at once in the explicit multi-goal task.
         half = max(3, int(self.TARGET_RADIUS * self.image_size / 2))
-        self._draw_square(img, cx, cy, half, np.array([230, 30, 30], dtype=np.uint8))
+        for goal in self.goal_positions:
+            cx, cy = self._world_to_pixel(goal)
+            self._draw_square(img, cx, cy, half, np.array([230, 30, 30], dtype=np.uint8))
         # Agent: blue circle
         cx, cy = self._world_to_pixel(self.agent_pos)
         radius_px = max(2, int(self.AGENT_RADIUS * self.image_size / 2))
@@ -185,14 +206,18 @@ class Reach2DEnv:
 # ---------------------------------------------------------------------------
 # Expert policy (用 A* / spline / heuristic 生成 demos)
 # ---------------------------------------------------------------------------
-def expert_policy(env, smoothness=0.5):
+def expert_policy(env, smoothness=0.5, target_id=None):
     """
     Heuristic expert: walk toward target, avoid distractors via simple potential field.
     Returns: list of (obs, action) pairs.
     """
+    if target_id is not None and not 0 <= int(target_id) < len(env.goal_positions):
+        raise ValueError("target_id is outside the available goals")
+    goal = (env.target_pos if target_id is None
+            else env.goal_positions[int(target_id)])
     obs_list, action_list = [], []
     for _ in range(env.MAX_STEPS):
-        attractor = env.target_pos - env.agent_pos  # 朝目标
+        attractor = goal - env.agent_pos  # 朝指定示范目标
         repulsor = np.zeros(2)
         for d in env.distractors:
             diff = env.agent_pos - d

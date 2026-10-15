@@ -65,6 +65,103 @@ def collect_demos(n_demos=1000, chunk_size=32, n_distractors=2, save_path=None,
     return data
 
 
+def collect_multi_target_demos(n_scenes=500, chunk_size=16, n_distractors=2,
+                               goal_positions=((-0.65, 0.55), (0.65, 0.55)),
+                               save_path=None, seed=42000, max_attempts=None,
+                               progress_callback=None):
+    """Collect paired expert trajectories to both visible goals per scene.
+
+    Each pair starts from a byte-identical observation.  The selected expert
+    goal is stored only as analysis metadata and is never returned as a model
+    input by :class:`DemoDataset`.
+    """
+    from env import Reach2DEnv, expert_policy
+
+    goals = np.asarray(goal_positions, dtype=np.float32)
+    if goals.ndim != 2 or goals.shape[1] != 2 or len(goals) < 2:
+        raise ValueError("goal_positions must contain at least two 2D goals")
+    if n_scenes < 1 or chunk_size < 1:
+        raise ValueError("n_scenes and chunk_size must be positive")
+
+    data = []
+    accepted = 0
+    attempts = 0
+    max_attempts = max_attempts or n_scenes * 8
+    while accepted < n_scenes and attempts < max_attempts:
+        scene_seed = seed + attempts
+        attempts += 1
+        paired = []
+        reference = None
+        valid_pair = True
+
+        for target_id in range(len(goals)):
+            env = Reach2DEnv(
+                n_distractors=n_distractors,
+                seed=scene_seed,
+                goal_positions=goals,
+            )
+            obs = env.reset(seed=scene_seed)
+            signature = (obs["image"].copy(), obs["state"].copy(),
+                         obs["goal_positions"].copy(), env.distractors.copy())
+            if reference is None:
+                reference = signature
+            elif any(not np.array_equal(a, b) for a, b in zip(reference, signature)):
+                raise RuntimeError("Paired demonstrations did not start from the same scene")
+
+            obs_list, act_list, info = expert_policy(env, target_id=target_id)
+            if (not info.get("success")
+                    or info.get("collision")
+                    or info.get("reached_target_id") != target_id
+                    or not act_list):
+                valid_pair = False
+                break
+
+            trajectory = []
+            length = len(obs_list)
+            for start in range(length):
+                valid = min(chunk_size, length - start)
+                actions = np.empty((chunk_size, 2), dtype=np.float32)
+                actions[:valid] = np.asarray(act_list[start:start + valid], dtype=np.float32)
+                actions[valid:] = actions[valid - 1]
+                mask = np.zeros((chunk_size,), dtype=np.float32)
+                mask[:valid] = 1.0
+                trajectory.append({
+                    "image": obs_list[start]["image"],
+                    "state": obs_list[start]["state"],
+                    "goal": obs_list[start]["goal"],
+                    "action_chunk": actions,
+                    "action_mask": mask,
+                    "scene_id": accepted,
+                    "scene_seed": scene_seed,
+                    "route_mode": target_id,
+                    "pair_start": start == 0,
+                    "trajectory_length": length,
+                })
+            paired.extend(trajectory)
+
+        if valid_pair:
+            data.extend(paired)
+            accepted += 1
+
+        if progress_callback and (
+                accepted == n_scenes or attempts % max(1, n_scenes // 20) == 0):
+            progress_callback({"accepted_scenes": accepted, "target_scenes": n_scenes,
+                               "attempts": attempts, "max_attempts": max_attempts})
+
+    if accepted != n_scenes:
+        raise RuntimeError(
+            f"Collected {accepted}/{n_scenes} paired scenes after {attempts} attempts; "
+            "check expert reachability or increase max_attempts"
+        )
+
+    if save_path is not None:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        with open(save_path, "wb") as handle:
+            pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print(f"Saved {len(data)} action chunks from {accepted} paired scenes → {save_path}")
+    return data
+
+
 class DemoDataset(Dataset):
     def __init__(self, path):
         with open(path, "rb") as f:

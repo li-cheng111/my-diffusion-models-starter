@@ -1,0 +1,30 @@
+# Both goals are visible in every observation; reaching either is success.
+goal_positions:
+  - [-0.65, 0.55]
+  - [0.65, 0.55]
+n_distractors: 2
+n_scenes: 500
+max_scene_attempts: 4000
+chunk_size: 16
+demo_path: ./data/two_targets_paired_seed42.pkl
+seed: 42
+data_seed: 42000
+use_vision: true
+vision_encoder: small
+vision_pretrained: false
+vision_out_dim: 128
+hidden: 256
+diffusion_steps: 100
+noise_schedule: linear
+mask_padding: true
+balance_paired_starts: true
+paired_start_weight: 4.0
+batch_size: 256
+lr: 1.0e-4
+weight_decay: 0.0
+ema_decay: 0.999
+max_steps: 5000
+log_every: 100
+save_every: 1000
+ckpt_dir: ./runs/project5_two_targets/finetune/ckpts
+num_workers: 2

@@ -13,9 +13,10 @@ from pathlib import Path
 import torch
 import numpy as np
 import yaml
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from dataset import DemoDataset, collect_demos
+from dataset import DemoDataset, collect_demos, collect_multi_target_demos
+from device_utils import get_device, seed_device
 from model import DiffusionPolicy
 from obs_utils import state_dim_for, state_from_batch
 
@@ -28,9 +29,7 @@ def load_config(path):
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    seed_device(seed)
 
 
 def write_json(path, payload):
@@ -180,13 +179,16 @@ def main():
     parser.add_argument("--method", choices=("ddpm", "fm", "bc"), default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--resume", default=None, help="Checkpoint path, latest, or auto")
+    parser.add_argument("--init-from", default=None,
+                        help="Initialize weights from a checkpoint with a fresh optimizer and step count")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     method = args.method or cfg.get("method", "ddpm")
     seed = cfg.get("seed", 0) if args.seed is None else args.seed
     set_seed(seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
+    print(f"Using device: {device}")
     run_dir = Path(args.run_dir or cfg.get("run_dir", "."))
     if args.run_dir:
         cfg["ckpt_dir"] = str(run_dir / "ckpts")
@@ -200,20 +202,52 @@ def main():
     # Collect demos if needed
     demo_path = cfg["demo_path"]
     if args.collect or not os.path.exists(demo_path):
-        collect_demos(
-            n_demos=cfg["n_demos"],
-            chunk_size=cfg["chunk_size"],
-            n_distractors=cfg["n_distractors"],
-            save_path=demo_path,
-            seed=cfg.get("data_seed", cfg.get("seed", 0)),
-            target_choices=cfg.get("target_choices"),
-        )
+        def report_collection(progress):
+            write_json(status_path, {
+                "state": "running", "stage": "paired_demo_collection",
+                "run": run_dir.name, "method": method, "seed": seed,
+                "step": progress["accepted_scenes"],
+                "max_steps": progress["target_scenes"],
+                "detail": (f"paired scenes {progress['accepted_scenes']}/"
+                           f"{progress['target_scenes']} ({progress['attempts']} attempts)"),
+            })
+
+        if cfg.get("goal_positions") is not None:
+            collect_multi_target_demos(
+                n_scenes=cfg.get("n_scenes", cfg.get("n_demos", 500)),
+                chunk_size=cfg["chunk_size"],
+                n_distractors=cfg["n_distractors"],
+                goal_positions=cfg["goal_positions"],
+                save_path=demo_path,
+                seed=cfg.get("data_seed", cfg.get("seed", 42)),
+                max_attempts=cfg.get("max_scene_attempts"),
+                progress_callback=report_collection,
+            )
+        else:
+            collect_demos(
+                n_demos=cfg["n_demos"],
+                chunk_size=cfg["chunk_size"],
+                n_distractors=cfg["n_distractors"],
+                save_path=demo_path,
+                seed=cfg.get("data_seed", cfg.get("seed", 0)),
+                target_choices=cfg.get("target_choices"),
+            )
 
     # Dataset
     ds = DemoDataset(demo_path)
+    sampler = None
+    if cfg.get("balance_paired_starts", False):
+        start_weight = float(cfg.get("paired_start_weight", 4.0))
+        weights = [
+            (1.0 / max(float(sample.get("trajectory_length", 1)), 1.0))
+            * (start_weight if sample.get("pair_start", False) else 1.0)
+            for sample in ds.data
+        ]
+        sampler = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
     loader = DataLoader(
-        ds, batch_size=cfg["batch_size"], shuffle=True,
-        num_workers=cfg.get("num_workers", 2), drop_last=True, pin_memory=True,
+        ds, batch_size=cfg["batch_size"], shuffle=sampler is None, sampler=sampler,
+        num_workers=cfg.get("num_workers", 2), drop_last=True,
+        pin_memory=device.type == "cuda",
     )
     print(f"Demo dataset: {len(ds)} samples")
 
@@ -245,6 +279,14 @@ def main():
     print(f"Params: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
 
     checkpoint = None
+    if args.init_from and args.resume:
+        raise ValueError("Use only one of --init-from and --resume")
+    if args.init_from:
+        initial = torch.load(args.init_from, map_location="cpu")
+        initial_state = initial.get("ema", initial.get("model", initial))
+        model.load_state_dict(initial_state)
+        ema_model.load_state_dict(initial_state)
+        print(f"Initialized weights from {args.init_from}; optimizer and step reset")
     resume_path = args.resume
     if resume_path and resume_path.lower() in {"latest", "auto"}:
         candidates = sorted(Path(cfg["ckpt_dir"]).glob("model_*.pt"))
