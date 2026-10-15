@@ -35,15 +35,19 @@ fi
 
 "$PYTHON_BIN" - <<'PY'
 import torch
-if not torch.cuda.is_available():
-    raise SystemExit("GPU preflight failed: this instance has no CUDA device visible to PyTorch")
-print(f"GPU ready: {torch.cuda.get_device_name(0)}")
-PY
+try:
+    import torch_musa
+except ModuleNotFoundError as exc:
+    if exc.name != "torch_musa":
+        raise
 
-if ! command -v nvidia-smi >/dev/null 2>&1; then
-  echo "GPU telemetry unavailable: nvidia-smi is missing" >&2
-  exit 11
-fi
+if torch.cuda.is_available():
+    print(f"CUDA GPU ready: {torch.cuda.get_device_name(0)}")
+elif hasattr(torch, "musa") and torch.musa.is_available():
+    print(f"MUSA GPU ready: {torch.musa.device_count()} visible device(s)")
+else:
+    raise SystemExit("GPU preflight failed: neither CUDA nor MUSA is visible to PyTorch")
+PY
 
 if [[ ! -d data/cifar-10-batches-py ]]; then
   echo "CIFAR-10 will be downloaded to $PROJECT_DIR/data before training." | tee -a "$LOG_DIR/combined.log"
@@ -51,8 +55,27 @@ if [[ ! -d data/cifar-10-batches-py ]]; then
 fi
 
 printf 'git_commit=%s\npython=%s\n' "$(git -C "$REPO_DIR" rev-parse HEAD)" "$($PYTHON_BIN --version 2>&1)" > "$ROOT/manifest/seed${SEED}_environment.txt"
-"$PYTHON_BIN" -c 'import torch; print(f"torch={torch.__version__}; cuda={torch.version.cuda}; gpu={torch.cuda.get_device_name(0)}")' >> "$ROOT/manifest/seed${SEED}_environment.txt"
-nvidia-smi >> "$ROOT/manifest/seed${SEED}_environment.txt"
+"$PYTHON_BIN" - <<'PY' >> "$ROOT/manifest/seed${SEED}_environment.txt"
+import torch
+try:
+    import torch_musa
+except ModuleNotFoundError as exc:
+    if exc.name != "torch_musa":
+        raise
+if torch.cuda.is_available():
+    print(f"torch={torch.__version__}; backend=cuda; gpu={torch.cuda.get_device_name(0)}")
+elif hasattr(torch, "musa") and torch.musa.is_available():
+    print(f"torch={torch.__version__}; backend=musa; visible_devices={torch.musa.device_count()}")
+else:
+    print(f"torch={torch.__version__}; backend=cpu")
+PY
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi >> "$ROOT/manifest/seed${SEED}_environment.txt"
+elif command -v musaInfo >/dev/null 2>&1; then
+  musaInfo >> "$ROOT/manifest/seed${SEED}_environment.txt"
+elif [[ -x /usr/local/musa/bin/musaInfo ]]; then
+  /usr/local/musa/bin/musaInfo >> "$ROOT/manifest/seed${SEED}_environment.txt"
+fi
 
 MONITOR_PID="$MONITOR_DIR/dashboard.pid"
 if [[ ! -f "$MONITOR_PID" ]] || ! kill -0 "$(cat "$MONITOR_PID")" 2>/dev/null; then

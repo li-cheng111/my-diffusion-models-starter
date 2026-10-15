@@ -8,11 +8,13 @@ from pathlib import Path
 import torch
 
 try:  # 支持 ``python -m`` 和 starter 原有的直接脚本入口。
+    from .device_utils import get_device, seed_accelerator
     from .dataset import denormalize, get_dataset
     from .diffusion import p_sample_loop
     from .model import UNet
     from .schedule import DDPMSchedule
 except ImportError:  # pragma: no cover - direct script compatibility
+    from device_utils import get_device, seed_accelerator
     from dataset import denormalize, get_dataset
     from diffusion import p_sample_loop
     from model import UNet
@@ -114,10 +116,9 @@ def _load_model(
     return model, schedule, cfg, weight_type
 
 
-def _seed_everything(seed: int) -> None:
+def _seed_everything(seed: int, device: torch.device) -> None:
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    seed_accelerator(seed, device)
 
 
 def main() -> None:
@@ -152,7 +153,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
 
     checkpoint = torch.load(args.ckpt, map_location="cpu")
     cfg = checkpoint["config"]
@@ -183,7 +184,7 @@ def main() -> None:
 
     results = {}
     for use_ema, ema_decay in weight_options:
-        _seed_everything(args.seed)
+        _seed_everything(args.seed, device)
         model, schedule, _, weight_type = _load_model(
             checkpoint, use_ema, device, ema_decay=ema_decay
         )

@@ -31,19 +31,23 @@ jobs are paired by training seed:
 
 ## GPU and environment preflight
 
-Use the same GPU image and Python environment on all instances. Before starting,
-verify on each instance:
+These three instances use Moore Threads MUSA GPUs (MTT S4000), not NVIDIA
+CUDA GPUs. Their installed environment uses `torch_musa`; import that package
+before querying `torch.musa` or selecting the device. The project detects CUDA
+or MUSA automatically, uses MUSA AMP on these instances, and records the MUSA
+device details through `musaInfo` when NVIDIA tooling is absent. Before
+starting, verify on each instance:
 
 ```bash
-nvidia-smi
-/root/miniconda3/bin/python -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "NO GPU")'
+/usr/local/musa/bin/musaInfo
+/root/miniconda3/bin/python -c 'import torch; import torch_musa; print(torch.__version__, torch.musa.is_available(), torch.musa.device_count())'
 df -h /root/autodl-tmp
 ```
 
-The launcher stops before training if PyTorch cannot see CUDA or `nvidia-smi`
-is unavailable. Install a CUDA-enabled PyTorch environment in an AutoDL image
-with an attached GPU; installing CUDA wheels alone cannot expose a missing GPU
-device to the container.
+The launcher stops before training if PyTorch can see neither CUDA nor MUSA.
+`nvidia-smi` is not expected on a Moore Threads instance and is not required.
+The monitor reports MUSA memory from `musaInfo`; utilization may be unavailable
+if the image does not provide a MUSA equivalent of `nvidia-smi`.
 
 ## Start one assigned instance
 

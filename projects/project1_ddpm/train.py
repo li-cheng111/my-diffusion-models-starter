@@ -16,14 +16,27 @@ import torch
 import numpy as np
 import torchvision.utils as vutils
 import yaml
-from torch.cuda.amp import GradScaler, autocast
 
 try:  # 支持 ``python -m`` 和 starter 原有的直接脚本入口。
+    from .device_utils import (
+        amp_components,
+        capture_accelerator_rng,
+        get_device,
+        restore_accelerator_rng,
+        seed_accelerator,
+    )
     from .dataset import denormalize, get_dataloader
     from .diffusion import p_losses, p_sample_loop
     from .model import UNet
     from .schedule import DDPMSchedule
 except ImportError:  # pragma: no cover - direct script compatibility
+    from device_utils import (
+        amp_components,
+        capture_accelerator_rng,
+        get_device,
+        restore_accelerator_rng,
+        seed_accelerator,
+    )
     from dataset import denormalize, get_dataloader
     from diffusion import p_losses, p_sample_loop
     from model import UNet
@@ -114,37 +127,49 @@ class EMABank:
             shadow.load_state_dict(legacy)
 
 
-def _set_seed(seed: int) -> None:
+def _set_seed(seed: int, device: torch.device) -> None:
     random.seed(seed)
     np.random.seed(seed % (2**32))
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    seed_accelerator(seed, device)
 
 
-def _capture_rng_state(data_generator: Optional[torch.Generator]) -> Dict[str, Any]:
+def _capture_rng_state(
+    data_generator: Optional[torch.Generator], device: Optional[torch.device] = None
+) -> Dict[str, Any]:
     state: Dict[str, Any] = {
         "python": random.getstate(),
         "numpy": np.random.get_state(),
         "torch": torch.get_rng_state(),
     }
-    if torch.cuda.is_available():
-        state["cuda"] = torch.cuda.get_rng_state_all()
+    accelerator_state = capture_accelerator_rng(device)
+    if accelerator_state is not None:
+        backend = device.type if device is not None else (
+            "cuda" if torch.cuda.is_available() else "musa"
+        )
+        state[backend] = accelerator_state
     if data_generator is not None:
         state["data_generator"] = data_generator.get_state()
     return state
 
 
 def _restore_rng_state(
-    state: Optional[Dict[str, Any]], data_generator: Optional[torch.Generator]
+    state: Optional[Dict[str, Any]],
+    data_generator: Optional[torch.Generator],
+    device: Optional[torch.device] = None,
 ) -> None:
     if not state:
         return
     random.setstate(state["python"])
     np.random.set_state(state["numpy"])
     torch.set_rng_state(state["torch"].cpu())
-    if torch.cuda.is_available() and "cuda" in state:
-        torch.cuda.set_rng_state_all([item.cpu() for item in state["cuda"]])
+    backend = device.type if device is not None else (
+        "cuda" if torch.cuda.is_available() else "musa"
+    )
+    accelerator_state = state.get(backend)
+    if accelerator_state is None and backend == "cuda":
+        accelerator_state = state.get("cuda")
+    restore_accelerator_rng(accelerator_state, device)
     if data_generator is not None and "data_generator" in state:
         data_generator.set_state(state["data_generator"].cpu())
 
@@ -196,13 +221,14 @@ def _save_checkpoint(
     optimizer: torch.optim.Optimizer,
     lr_scheduler: Optional[torch.optim.lr_scheduler.LambdaLR],
     ema: Optional[Any],
-    scaler: GradScaler,
+    scaler: Any,
     cfg: Dict[str, Any],
     epoch: int,
     global_step: int,
     resume_schedule_origin_step: Optional[int] = None,
     attempt_step: int = 0,
     data_generator: Optional[torch.Generator] = None,
+    device: Optional[torch.device] = None,
 ) -> None:
     state: Dict[str, Any] = {
         "epoch": epoch,
@@ -220,7 +246,7 @@ def _save_checkpoint(
         state["scaler"] = scaler.state_dict()
     if resume_schedule_origin_step is not None:
         state["resume_schedule_origin_step"] = resume_schedule_origin_step
-    state["rng_state"] = _capture_rng_state(data_generator)
+    state["rng_state"] = _capture_rng_state(data_generator, device)
     temporary_path = path.with_name(path.name + ".tmp")
     torch.save(state, temporary_path)
     with temporary_path.open("rb") as handle:
@@ -272,13 +298,14 @@ def _lr_for_update(cfg: Dict[str, Any], step: int) -> float:
 
 
 def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
+    print(f"Using device: {device}", flush=True)
     output_dir = Path(cfg["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "samples").mkdir(exist_ok=True)
     (output_dir / "ckpt").mkdir(exist_ok=True)
 
-    _set_seed(int(cfg.get("seed", 42)))
+    _set_seed(int(cfg.get("seed", 42)), device)
     with (output_dir / "config.yaml").open("w") as handle:
         yaml.safe_dump(cfg, handle, sort_keys=False)
 
@@ -295,6 +322,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
         num_workers=cfg["dataset"].get("num_workers", 4),
         generator=data_generator,
         persistent_workers=False if exact_epoch_resume else None,
+        pin_memory=device.type == "cuda",
     )
     model = UNet(**cfg["model"]).to(device)
     schedule = DDPMSchedule(**cfg["diffusion"]).to(device)
@@ -321,8 +349,9 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
         ema_decay = float(cfg.get("ema_decay", 0.0))
         ema = EMA(model, ema_decay) if ema_decay > 0 else None
     precision = cfg.get("mixed_precision", "no")
-    use_amp = precision in {"fp16", "bf16"} and device.type == "cuda"
+    use_amp = precision in {"fp16", "bf16"} and device.type in {"cuda", "musa"}
     amp_dtype = torch.bfloat16 if precision == "bf16" else torch.float16
+    autocast, GradScaler = amp_components(device)
     scaler = GradScaler(enabled=use_amp and amp_dtype == torch.float16)
 
     start_epoch = 0
@@ -348,7 +377,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
             resume_schedule_origin_step = int(
                 checkpoint.get("resume_schedule_origin_step", global_step)
             )
-    _restore_rng_state(resume_rng_state, data_generator)
+    _restore_rng_state(resume_rng_state, data_generator, device)
 
     if resume_lr_cfg is not None:
         if resume_schedule_origin_step is None:
@@ -538,6 +567,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                     resume_schedule_origin_step,
                     micro_step,
                     data_generator,
+                    device,
                 )
 
         _save_loss_history(history, output_dir)
@@ -555,6 +585,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                 resume_schedule_origin_step,
                 micro_step,
                 data_generator,
+                device,
             )
         if max_steps is not None and global_step >= max_steps:
             break
@@ -572,6 +603,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
         resume_schedule_origin_step,
         micro_step,
         data_generator,
+        device,
     )
     _save_loss_history(history, output_dir)
     if wandb is not None:

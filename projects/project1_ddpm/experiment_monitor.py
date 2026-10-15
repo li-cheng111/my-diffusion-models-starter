@@ -25,7 +25,7 @@ PAGE = r'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <style>
 :root{color-scheme:light dark;--bg:light-dark(#f4f6fa,#15171b);--card:light-dark(#fff,#20242c);--text:light-dark(#202633,#eef2f7);--muted:light-dark(#667085,#a7afbd);--line:light-dark(#dfe4ec,#363d49);--blue:light-dark(#356ae6,#8eafff);--amber:light-dark(#c87517,#f1b56e);--green:light-dark(#16834b,#72d6a2)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:1240px;margin:auto;padding:25px 20px 42px}h1{margin:0;font-size:25px}.sub,.muted{color:var(--muted);font-size:13px}.sub{margin:7px 0 20px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card,.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px}.label{color:var(--muted);font-size:12px}.value{font-size:20px;font-weight:650;margin-top:5px}.panel{margin-top:16px;overflow:auto}h2{font-size:16px;margin:0 0 12px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--muted);font-weight:600}.running,.sampling,.evaluating{color:var(--amber);font-weight:650}.completed{color:var(--green);font-weight:650}.pending,.stopped{color:var(--muted)}.bar{height:10px;min-width:130px;background:color-mix(in srgb,var(--blue) 15%,transparent);border-radius:99px;overflow:hidden}.fill{height:100%;background:var(--blue);border-radius:inherit}.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:16px}.chart{width:100%;height:230px;display:block}.chart .axis,.chart .grid{stroke:var(--line);stroke-width:1}.chart .grid{stroke-dasharray:3 5}.chart .line{fill:none;stroke:var(--blue);stroke-width:2.5}.samples{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.samples img{width:100%;aspect-ratio:1;object-fit:contain;border:1px solid var(--line);background:var(--bg)}pre{max-height:250px;overflow:auto;white-space:pre-wrap;color:var(--muted);font-size:12px;line-height:1.45}.foot{margin-top:15px;color:var(--muted);font-size:12px}@media(max-width:760px){main{padding:20px 12px}.cards{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.samples{grid-template-columns:repeat(4,1fr)}.value{font-size:17px}}
-</style></head><body><main><h1>DDPM FID 改进实验实时监控</h1><div class="sub">严格 200 epoch · 每 2 秒刷新 · 页面只读，不干扰训练</div>
+</style></head><body><main><h1>DDPM FID 改进实验实时监控</h1><div class="sub">线性 / cosine 对照 · 每 2 秒刷新 · 页面只读，不干扰训练</div>
 <div class="cards"><div class="card"><div class="label">总体状态</div><div id="status" class="value">连接中</div></div><div class="card"><div class="label">总体进度</div><div id="progress" class="value">—</div></div><div class="card"><div class="label">当前实验</div><div id="current" class="value">—</div></div><div class="card"><div class="label">GPU</div><div id="gpu" class="value">—</div></div></div>
 <section class="panel"><h2>实验进度</h2><table><thead><tr><th>实验</th><th>状态</th><th>Step</th><th>进度</th><th>Loss</th><th>LR</th><th>EMA</th><th>Checkpoint</th></tr></thead><tbody id="runs"></tbody></table></section>
 <div class="layout"><section class="panel"><h2 id="loss-title">Loss 曲线</h2><svg id="chart" class="chart" viewBox="0 0 900 230"><line class="axis" x1="55" y1="200" x2="875" y2="200"/><line class="axis" x1="55" y1="18" x2="55" y2="200"/><g id="grid"></g><polyline id="line" class="line" points=""/><text x="465" y="225" text-anchor="middle">training step</text></svg></section><section class="panel"><h2>最新样本</h2><div id="samples" class="samples"></div><div id="sample-empty" class="muted">尚未生成样本</div></section></div>
@@ -107,7 +107,27 @@ def _gpu() -> dict[str, str]:
         usage, used, total = [part.strip() for part in result.stdout.strip().splitlines()[0].split(",")[:3]]
         return {"label": f"{usage}% · {used}/{total} MiB", "usage": usage, "used": used, "total": total}
     except (OSError, IndexError, ValueError, subprocess.TimeoutExpired):
-        return {"label": "unavailable", "usage": "—", "used": "—", "total": "—"}
+        pass
+
+    for command in ("musa-smi", "mthreads-smi", "/usr/local/musa/bin/musaInfo"):
+        try:
+            result = subprocess.run(
+                [command], capture_output=True, text=True, timeout=2, check=False
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        total_match = re.search(r"memInfo\.total:\s*([\d.]+)\s*GB", result.stdout)
+        free_match = re.search(r"memInfo\.free:\s*([\d.]+)\s*GB", result.stdout)
+        if total_match and free_match:
+            total = float(total_match.group(1))
+            used = max(0.0, total - float(free_match.group(1)))
+            return {
+                "label": f"MUSA · 利用率不可读 · {used:.2f}/{total:.2f} GB",
+                "usage": "—",
+                "used": f"{used:.2f} GB",
+                "total": f"{total:.2f} GB",
+            }
+    return {"label": "unavailable", "usage": "—", "used": "—", "total": "—"}
 
 
 def _pid_alive(pid_file: Path) -> bool:

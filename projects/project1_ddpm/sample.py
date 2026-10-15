@@ -9,11 +9,13 @@ import torch
 import torchvision.utils as vutils
 
 try:  # 支持 ``python -m`` 和 starter 原有的直接脚本入口。
+    from .device_utils import get_device, seed_accelerator
     from .dataset import denormalize
     from .diffusion import p_sample_loop
     from .model import UNet
     from .schedule import DDPMSchedule
 except ImportError:  # pragma: no cover - direct script compatibility
+    from device_utils import get_device, seed_accelerator
     from dataset import denormalize
     from diffusion import p_sample_loop
     from model import UNet
@@ -58,11 +60,10 @@ def main() -> None:
     parser.add_argument("--clip_denoised", action="store_true")
     args = parser.parse_args()
 
+    device = get_device()
     if args.seed is not None:
         torch.manual_seed(args.seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(args.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        seed_accelerator(args.seed, device)
     model, schedule, cfg = load_model_from_ckpt(
         args.ckpt,
         use_ema=not args.no_ema,
