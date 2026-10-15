@@ -12,7 +12,7 @@
 | DPM-Solver-2 | 基于指数中点法的二阶求解器；`S` 个外层步实际调用模型 `2S-1` 次。 |
 | DDIM inversion | 将图像反演到噪声潜变量，再确定性重构并测量误差。 |
 
-### 二、实验结果
+### 二、实验结果（任务A、B、D）
 
 | 采样器 | 步数 / 外层步 | NFE | FID ↓ | 采样时间 |
 |---|---:|---:|---:|---:|
@@ -44,7 +44,7 @@
 
 数据见 [`results/p1_r5_ddim_5k.json`](results/p1_r5_ddim_5k.json)，250 NFE 样图见 [`samples/r5_baseline/ddim_nfe250.png`](samples/r5_baseline/ddim_nfe250.png)。
 
-## 三、采样轨迹对比
+## 三、采样轨迹对比（任务C）
 
 轨迹实验对四种方法传入同一个初始噪声 tensor，减少随机起点造成的差异。下列数据使用 CIFAR-10 seed 44 EMA 模型、初始噪声 seed 44；DDIM、Euler 使用 50 步，DPM-Solver-2 使用 50 个外层步。
 
@@ -57,7 +57,7 @@
 
 ![相同初始噪声下的采样轨迹](runs/trajectory_comparison.png)
 
-## 四、DDIM 反演与重构
+## 四、DDIM 反演与重构（任务E）
 
 反演使用 CIFAR-10 测试集前 64 张图，按采样时间步的反方向运行；往返过程关闭 `x0` 裁剪，避免裁剪影响重构误差。表中指标是 64 张图逐图测量后的均值。
 
@@ -104,18 +104,7 @@ $$
 
 其更新可化为 DDPM ancestral 更新。跳步时即使 `eta=1`，也只是类似 DDPM 的随机更新，并非原始 DDPM Markov 链。
 
-## 六、验证与结果文件说明
-
-| 文件 | 内容 |
-|---|---|
-| `runs/benchmark_all.json` | 15 个正式配置、FID、NFE、耗时、checkpoint 摘要和运行环境。 |
-| `runs/benchmark_ddim.json` | 五个 DDIM 步数的独立结果。 |
-| `runs/pareto_fid_nfe.png` | 完整 FID–NFE Pareto 图。 |
-| `runs/trajectory_comparison.json`、`runs/trajectory_comparison.png` | 共同初始噪声下的轨迹指标和图像。 |
-| `runs/inversion_results.json`、`runs/inversion_errors.png` | 反演重构指标和误差图。 |
-| `results/p1_r5_ddim_5k.json`、`results/p1_r5_ddim_5k.png` | Project 1 R5 checkpoint 的独立 DDIM 对照。 |
-
-## 七、自查问题与回答
+## 六、自查问题与回答
 
 为避免符号混淆，记单步保留系数为 $\alpha_t=1-\beta_t$，累积保留系数为 $\bar\alpha_t=\prod_{i=1}^{t}\alpha_i$，干净端点为 $\bar\alpha_0=1$。这里使用数学上的 $t=1,\ldots,T$；代码中的训练索引为 `0,...,T-1`，干净端点用 `-1` 表示。$\sigma_{t\to s}$ 专指 DDIM 更新时新注入噪声的标准差。
 
@@ -267,3 +256,15 @@ x_s^{\mathrm{rec}}-x_s
 $$
 
 这个等式直接显示误差来源：**两个方向在不同状态和时间上调用模型，噪声预测通常不相等，因此不会严格抵消。** 同一时间步序列只是保证两边的区间匹配，不能消除这一近似误差。
+
+## 七、验证与结果文件说明
+
+| 文件 | 内容 |
+|---|---|
+| `runs/benchmark_all.json` | 15 个正式配置、FID、NFE、耗时、checkpoint 摘要和运行环境。 |
+| `runs/benchmark_ddim.json` | 五个 DDIM 步数的独立结果。 |
+| `runs/pareto_fid_nfe.png` | 完整 FID–NFE Pareto 图。 |
+| `runs/trajectory_comparison.json`、`runs/trajectory_comparison.png` | 共同初始噪声下的轨迹指标和图像。 |
+| `runs/inversion_results.json`、`runs/inversion_errors.png` | 反演重构指标和误差图。 |
+| `results/p1_r5_ddim_5k.json`、`results/p1_r5_ddim_5k.png` | Project 1 R5 checkpoint 的独立 DDIM 对照。 |
+
