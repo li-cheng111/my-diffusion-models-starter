@@ -99,6 +99,7 @@ if [[ ! -f "$MONITOR_PID" ]] || ! kill -0 "$(cat "$MONITOR_PID")" 2>/dev/null; t
     --total-steps "$TOTAL_ATTEMPTS" \
     --pid-file "$MONITOR_DIR/runner.pid" \
     --log-path "$LOG_DIR/combined.log" \
+    --dataset-dir "$PROJECT_DIR/data" \
     --host 0.0.0.0 --port 8765 \
     > "$MONITOR_DIR/dashboard.log" 2>&1 &
   echo "$!" > "$MONITOR_PID"
