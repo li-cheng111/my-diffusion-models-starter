@@ -75,14 +75,14 @@
 
 DDIM 根据噪声预测估计干净样本：
 
-$$
+```math
 \hat{x}_0=\frac{x_t-\sqrt{1-\bar{\alpha}_t}\,\epsilon_\theta(x_t,t)}
 {\sqrt{\bar{\alpha}_t}}.
-$$
+```
 
 对跳步 `t > t_prev`，更新为：
 
-$$
+```math
 \begin{aligned}
 \sigma_t^2 &= \eta^2\frac{1-\bar{\alpha}_{t_{prev}}}{1-\bar{\alpha}_t}
 \left(1-\frac{\bar{\alpha}_t}{\bar{\alpha}_{t_{prev}}}\right),\\
@@ -90,7 +90,7 @@ x_{t_{prev}} &= \sqrt{\bar{\alpha}_{t_{prev}}}\hat{x}_0
 +\sqrt{1-\bar{\alpha}_{t_{prev}}-\sigma_t^2}\,\epsilon_\theta
 +\sigma_t z.
 \end{aligned}
-$$
+```
 
 `eta=0` 时 `sigma=0`，固定权重、时间步和初始噪声后采样结果确定。`eta` 增大时会注入额外噪声，可能增加多样性，也会改变低步数下的保真度。实现会保护平方根和除法的数值范围；普通生成默认裁剪 `x0` 到 `[-1,1]`，反演与重构不裁剪。
 
@@ -98,21 +98,21 @@ DPM-Solver-2 令 `lambda = log(alpha / sigma)`，在 lambda 中点进行二阶�
 
 当 DDIM 不裁剪 `x0`、采用连续相邻训练时间步，并令随机方差等于 DDPM posterior variance
 
-$$
+```math
 \tilde{\beta}_t=\frac{1-\bar{\alpha}_{t-1}}{1-\bar{\alpha}_t}\beta_t,
-$$
+```
 
 其更新可化为 DDPM ancestral 更新。跳步时即使 `eta=1`，也只是类似 DDPM 的随机更新，并非原始 DDPM Markov 链。
 
 ## 六、自查问题与回答
 
-为避免符号混淆，记单步保留系数为 $\alpha_t=1-\beta_t$，累积保留系数为 $\bar\alpha_t=\prod_{i=1}^{t}\alpha_i$，干净端点为 $\bar\alpha_0=1$。这里使用数学上的 $t=1,\ldots,T$；代码中的训练索引为 `0,...,T-1`，干净端点用 `-1` 表示。$\sigma_{t\to s}$ 专指 DDIM 更新时新注入噪声的标准差。
+为避免符号混淆，记单步保留系数为 $`\alpha_t=1-\beta_t`$，累积保留系数为 $`\bar\alpha_t=\prod_{i=1}^{t}\alpha_i`$，干净端点为 $`\bar\alpha_0=1`$。这里使用数学上的 $`t=1,\ldots,T`$；代码中的训练索引为 `0,...,T-1`，干净端点用 `-1` 表示。$`\sigma_{t\to s}`$ 专指 DDIM 更新时新注入噪声的标准差。
 
 ### 1. 确定性：相同初始噪声是否一定得到相同输出？
 
-从较大的时间 $t$ 跳到较小的时间 $s$，DDIM 更新为：
+从较大的时间 $`t`$ 跳到较小的时间 $`s`$，DDIM 更新为：
 
-$$
+```math
 \begin{aligned}
 \epsilon_t &= \epsilon_\theta(x_t,t),\\
 \hat x_0 &= \frac{x_t-\sqrt{1-\bar\alpha_t}\,\epsilon_t}{\sqrt{\bar\alpha_t}},\\
@@ -122,9 +122,9 @@ x_s &= \sqrt{\bar\alpha_s}\,\hat x_0
 +\sqrt{1-\bar\alpha_s-\sigma_{t\to s}^{2}}\,\epsilon_t
 +\sigma_{t\to s}z,\qquad z\sim\mathcal N(0,I).
 \end{aligned}
-$$
+```
 
-当 $\eta=0$ 时，$\sigma_{t\to s}=0$，最后的随机项消失。给定 $x_t$ 后，模型预测和下一步状态都是确定的函数，逐步复合后得到 $x_0=G_\theta(x_T)$。因此，在数学层面，固定同一个 $x_T$、模型权重、条件、时间步序列和裁剪规则，确定性网络会给出相同输出。但是若初始噪声不同，也还会得到不同的输出。
+当 $`\eta=0`$ 时，$`\sigma_{t\to s}=0`$，最后的随机项消失。给定 $`x_t`$ 后，模型预测和下一步状态都是确定的函数，逐步复合后得到 $`x_0=G_\theta(x_T)`$。因此，在数学层面，固定同一个 $`x_T`$、模型权重、条件、时间步序列和裁剪规则，确定性网络会给出相同输出。但是若初始噪声不同，也还会得到不同的输出。
 
 本项目的 [`DDIMSampler.step`](samplers/ddim.py) 只有在 `eta > 0` 且 `sigma > 0` 时才调用 `randn`。当通过 `initial_x` 显式传入初始噪声且 `eta=0` 时，采样过程无需再抽取随机数。
 
@@ -132,69 +132,69 @@ $$
 
 ### 2. 时间步：cosine 模型如何选取 100 个 DDIM 推理步？
 
-训练噪声调度决定每个时间索引对应的 $\bar\alpha_t$；推理时间步策略决定从这些索引中选取哪些点。`timestep_strategy="linear"` 表示均匀选择索引，并不表示把模型的训练噪声调度改成 linear。
+训练噪声调度决定每个时间索引对应的 $`\bar\alpha_t`$；推理时间步策略决定从这些索引中选取哪些点。`timestep_strategy="linear"` 表示均匀选择索引，并不表示把模型的训练噪声调度改成 linear。
 
 对于使用 cosine schedule 训练、共有 1,000 个训练时间步的模型，可以从代码索引 `0,...,999` 中均匀选择 100 个不同索引，再按降序采样。选择索引的算法可以与 linear 模型相同，但每一步必须读取 cosine 调度对应的 `alphas_cumprod`，并将选中的原始训练索引传给模型。
 
-相同的索引选择不代表相同的噪声间隔。cosine 调度按归一化时间 $u\in[0,1]$ 定义的目标累积系数为：
+相同的索引选择不代表相同的噪声间隔。cosine 调度按归一化时间 $`u\in[0,1]`$ 定义的目标累积系数为：
 
-$$
+```math
 f(u)=\cos^2\!\left(\frac{u+s_0}{1+s_0}\frac{\pi}{2}\right),
 \qquad \bar\alpha(u)=\frac{f(u)}{f(0)}.
-$$
+```
 
-其中 $s_0$ 是小偏移量。离散实现还会裁剪 $\beta_t$，所以推理应使用实际保存或一致重建的系数。
+其中 $`s_0`$ 是小偏移量。离散实现还会裁剪 $`\beta_t`$，所以推理应使用实际保存或一致重建的系数。
 
 可用半对数信噪比检查每一步跨越的噪声范围：
 
-$$
+```math
 \lambda_t=\log\frac{\sqrt{\bar\alpha_t}}{\sqrt{1-\bar\alpha_t}}
 =\frac12\log\frac{\bar\alpha_t}{1-\bar\alpha_t}.
-$$
+```
 
-如果希望按噪声水平分配预算，可以在实际训练索引对应的有限 $\lambda$ 区间中选择 100 个目标值，再映射到最接近的训练索引。
+如果希望按噪声水平分配预算，可以在实际训练索引对应的有限 $`\lambda`$ 区间中选择 100 个目标值，再映射到最接近的训练索引。
 
 ### 3. 插值：为什么改变 eta 会影响生成质量？小步数时哪一端通常更好？
 
-对固定区间 $t\to s$，记 $\eta=1$ 时的方差为 $v_{t\to s}$，则：
+对固定区间 $`t\to s`$，记 $`\eta=1`$ 时的方差为 $`v_{t\to s}`$，则：
 
-$$
+```math
 \sigma_{t\to s}^{2}=\eta^2v_{t\to s},\qquad
 x_s=\sqrt{\bar\alpha_s}\hat x_0
 +\sqrt{1-\bar\alpha_s-\eta^2v_{t\to s}}\,\epsilon_t
 +\eta\sqrt{v_{t\to s}}\,z.
-$$
+```
 
-因此，增大 $\eta$ 不只是额外加一份噪声，它同时减小沿当前噪声预测 $\epsilon_t$ 前进的系数，并增大独立随机噪声的系数，即不同 $\eta$ 改变了采样路径及后续模型看到的输入。
+因此，增大 $`\eta`$ 不只是额外加一份噪声，它同时减小沿当前噪声预测 $`\epsilon_t`$ 前进的系数，并增大独立随机噪声的系数，即不同 $`\eta`$ 改变了采样路径及后续模型看到的输入。
 
 在理想条件下，不同生成过程可以对应相同的目标数据分布，但实际模型预测不精确，而且跳步会放大相邻状态之间的差异，因此不同路径上的误差传播不同，最终 FID 也会不同。
 
-在很少的推理步数下，$\eta=0$ 或较小的 $\eta$ 往往是更好的起点，确定性更新利用当前预测跨越较大的时间间隔，而强随机更新在有限的后续去噪次数下更难得到充分修正。
+在很少的推理步数下，$`\eta=0`$ 或较小的 $`\eta`$ 往往是更好的起点，确定性更新利用当前预测跨越较大的时间间隔，而强随机更新在有限的后续去噪次数下更难得到充分修正。
 
 ### 4. 退化：证明 DDIM 在 posterior variance 下得到 DDPM 均值
 
-考虑相邻步 $t\to t-1$，先不裁剪 $\hat x_0$，并令：
+考虑相邻步 $`t\to t-1`$，先不裁剪 $`\hat x_0`$，并令：
 
-$$
+```math
 \sigma_{t\to t-1}^{2}=\tilde\beta_t
 =\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t,
 \qquad \bar\alpha_t=\alpha_t\bar\alpha_{t-1}.
-$$
+```
 
 第一步，化简 DDIM 噪声方向的系数：
 
-$$
+```math
 \begin{aligned}
 1-\bar\alpha_{t-1}-\tilde\beta_t
 &=(1-\bar\alpha_{t-1})\left(1-\frac{\beta_t}{1-\bar\alpha_t}\right)\\
 &=\frac{\alpha_t(1-\bar\alpha_{t-1})^2}{1-\bar\alpha_t}.
 \end{aligned}
-$$
+```
 
-因此其平方根为 $\sqrt{\alpha_t}(1-\bar\alpha_{t-1})/\sqrt{1-\bar\alpha_t}$。
-第二步，把 $\hat x_0$ 代入 DDIM 的非随机部分 $m_t$：
+因此其平方根为 $`\sqrt{\alpha_t}(1-\bar\alpha_{t-1})/\sqrt{1-\bar\alpha_t}`$。
+第二步，把 $`\hat x_0`$ 代入 DDIM 的非随机部分 $`m_t`$：
 
-$$
+```math
 \begin{aligned}
 m_t
 &=\sqrt{\bar\alpha_{t-1}}\hat x_0
@@ -206,54 +206,54 @@ m_t
 \frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon_t\right)
 =\mu_\theta(x_t,t).
 \end{aligned}
-$$
+```
 
-最后一步使用恒等式 $-(1-\bar\alpha_t)+\alpha_t(1-\bar\alpha_{t-1})=-\beta_t$。加入随机项后即为：
+最后一步使用恒等式 $`-(1-\bar\alpha_t)+\alpha_t(1-\bar\alpha_{t-1})=-\beta_t`$。加入随机项后即为：
 
-$$
+```math
 x_{t-1}=\mu_\theta(x_t,t)+\sqrt{\tilde\beta_t}\,z.
-$$
+```
 
-为了与题目中的 $\tilde\mu_t$ 对应，真实前向后验的均值为：
+为了与题目中的 $`\tilde\mu_t`$ 对应，真实前向后验的均值为：
 
-$$
+```math
 \tilde\mu_t(x_t,x_0)
 =\frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}x_0
 +\frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t.
-$$
+```
 
-代入 $x_0=\hat x_0$ 后，正好得到上面的 $\mu_\theta(x_t,t)$；若 $\hat x_0$ 恰好等于真实 $x_0$，则得到真实后验均值。
+代入 $`x_0=\hat x_0`$ 后，正好得到上面的 $`\mu_\theta(x_t,t)`$；若 $`\hat x_0`$ 恰好等于真实 $`x_0`$，则得到真实后验均值。
 
 ### 5. 误差来源：DDIM Inversion 为什么不能保证精确重构？
 
-记 $a_t$ 和 $b_t$ 分别为：
+记 $`a_t`$ 和 $`b_t`$ 分别为：
 
-$$
+```math
 a_t=\sqrt{\bar\alpha_t},\qquad
 b_t=\sqrt{1-\bar\alpha_t}.
-$$
+```
 
 无裁剪的确定性 DDIM 可写为：
 
-$$
+```math
 x_s=\frac{a_s}{a_t}x_t+
 \left(b_s-\frac{a_s}{a_t}b_t\right)\epsilon_\theta(x_t,t), \qquad s<t.
-$$
+```
 
-若给定 $x_s$ 求 $x_t$，右侧模型预测依赖尚未知晓的 $x_t$，一般需要解一个非线性方程。标准 DDIM inversion 用已知端点的预测替代未知端点的预测，得到显式近似：
+若给定 $`x_s`$ 求 $`x_t`$，右侧模型预测依赖尚未知晓的 $`x_t`$，一般需要解一个非线性方程。标准 DDIM inversion 用已知端点的预测替代未知端点的预测，得到显式近似：
 
-$$
+```math
 \hat x_t=\frac{a_t}{a_s}x_s+
 \left(b_t-\frac{a_t}{a_s}b_s\right)\epsilon_\theta(x_s,s).
-$$
+```
 
-再从 $\hat x_t$ 采样回 $s$，单区间往返残差满足：
+再从 $`\hat x_t`$ 采样回 $`s`$，单区间往返残差满足：
 
-$$
+```math
 x_s^{\mathrm{rec}}-x_s
 =\left(b_s-\frac{a_s}{a_t}b_t\right)
 \left[\epsilon_\theta(\hat x_t,t)-\epsilon_\theta(x_s,s)\right].
-$$
+```
 
 这个等式直接显示误差来源：**两个方向在不同状态和时间上调用模型，噪声预测通常不相等，因此不会严格抵消。** 同一时间步序列只是保证两边的区间匹配，不能消除这一近似误差。
 
