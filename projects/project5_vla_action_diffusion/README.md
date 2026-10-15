@@ -81,6 +81,8 @@ no vision(state-only) 直接获得目标位置，却没有障碍物坐标，视�
   </tr>
 </table>
 
+*图 1. H=16 视觉 DDPM 的四条成功闭环轨迹示例。蓝线为策略轨迹，圆点为起点，红星为目标，灰色方块为障碍物。*
+
 ### 4）FM + vision
 
 FM 在相同视觉条件、H=16 下达到**87% 成功率，碰撞率 7%、超时率 6%**，采样使用 10 步 Euler。
@@ -112,6 +114,8 @@ BC 为 88%，视觉 DDPM 为 81%，在实验条件下FM的效果相较于DDPM更
 下图展示扩展实验的总体结果，并标示多目标评测中的目标位置与分模式成功率。
 
 ![扩展实验闭环结果与双目标示意](results/bonus_summary.png)
+
+*图 2. 扩展实验闭环结果及多目标实验中的目标位置与分模式成功率汇总。*
 
 ### 1）Flow Matching 替代 DDPM
 
@@ -148,6 +152,8 @@ H=16 视觉 DDPM 在 100 个 episode 上总体成功 97 次；按目标模式统
   </tr>
 </table>
 
+*图 3. Multi-modal 实验中分别以左侧和右侧目标为条件的成功闭环轨迹。*
+
 ### 3）ImageNet-pretrained ResNet-18 替换小 CNN
 
 ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参数量 11.48M；小 CNN 参数量 0.59M。
@@ -158,7 +164,15 @@ ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参�
 | ImageNet ResNet-18 | 5,000 | 128 / $3\times10^{-4}$ | 63.8 step/s | 0.1168 |
 | ImageNet ResNet-18（延长训练） | 15,000 | 128 / $1\times10^{-3}$ | 67.0 step/s | 0.0950 |
 
+| 方法 | 训练目标 | 推理方式 | 成功率 | 碰撞率 | 超时率 | 平均步数 |
+|---|---|---|---:|---:|---:|---:|
+| Small CNN（公平 DDPM，10k） | DDPM 噪声预测 | DDIM 20 步；H=16，每 4 步重规划 | 81% | 8% | 11% | 35.57 |
+| ImageNet-pretrained ResNet-18（5k） | DDPM 噪声预测 | DDIM 20 步；H=16，每 4 步重规划 | 3% | 8% | 89% | 91.92 |
+| ImageNet-pretrained ResNet-18（15k） | DDPM 噪声预测 | DDIM 20 步；H=16，每 4 步重规划 | 2% | 18% | 80% | 89.29 |
+
 ![Small CNN 与 ImageNet-pretrained ResNet-18 的收敛曲线](results/resnet_convergence.png)
+
+*图 4. Small CNN 与 ImageNet-pretrained ResNet-18 的训练损失收敛曲线.*
 
 同样更新至 5,000 步时，小 CNN 的 avg100 loss 为 0.1113，ResNet-18 为 0.1168；ResNet-18 延长至 15,000 步后降到 0.0950，接近小 CNN 10,000 步时的 0.0968。它约多用 50% 更新步数才到达相近训练 loss，而单步吞吐相近。batch size、部分学习率和训练 seed 不同，因此这是描述性比较，不是严格控制变量结论。闭环评估中 ResNet-18 5k/15k 成功率分别为 3%/2%，低于当前小 CNN 公平矩阵的 81% 参考值；评估 seeds 和配置不同，这一差异也不作严格排名。
 
@@ -175,12 +189,16 @@ ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参�
 
 成功率点估计相近，但碰撞率由 3% 升至 20%，说明策略具备一定迁移能力。下方为移动障碍测试中的两条成功轨迹。
 
+现存归档图只保存每回合结束时的障碍位置，没有逐步障碍坐标；因此不能从 PNG 准确恢复运动轨迹。要叠加真实轨迹，需要使用相同 checkpoint 和 seed 重新评测并记录每一步的位置。
+
 <table>
   <tr>
     <td align="center"><img src="results/bonus_rollouts/moving_success_ep000.png" alt="移动障碍成功轨迹 episode 0" width="320"/><br/><sub>Episode 0</sub></td>
     <td align="center"><img src="results/bonus_rollouts/moving_success_ep005.png" alt="移动障碍成功轨迹 episode 5" width="320"/><br/><sub>Episode 5</sub></td>
   </tr>
 </table>
+
+*图 5. 移动障碍环境中的两条成功策略轨迹；灰色方块表示回合结束时的障碍位置，现存归档图未包含障碍物运动轨迹。*
 
 ## 五、自查问题
 
@@ -198,8 +216,16 @@ ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参�
 
 ## 七、文件索引
 
-- `env.py`、`dataset.py`、`obs_utils.py`：环境、专家数据与观测条件处理。
-- `model.py`、`train.py`、`eval.py`：策略结构、训练与闭环评估；`configs/`：实验配置。
-- [公平矩阵汇总](results/fair_seed42/fair_ablation.md)；[公平矩阵指标](results/fair_seed42/fair_summary.json)；`results/ablation.md`：历史消融指标归档，不纳入正文主结果；[实验日志](logs/exp_log.md)。
-- [state-only 评估](results/eval_state.json)、[视觉评估](results/eval_vision.json)：条件参照；`results/rollouts/`、`results/bonus_rollouts/`：示例轨迹；`results/*.json`：扩展实验指标。
-- `logs/train_spatial.log`、`logs/train_resnet18*.log`：ResNet 收敛图的数据来源；`results/metrics/`：训练指标；[公平实验方案](FAIR_EXPERIMENT_PLAN.md)：对照协议；[调试记录](debug_log.md)：5 条实际实现/运行问题。
+| 类别 | 文件 / Release 资产 | 内容 |
+|---|---|---|
+| 环境与数据 | [`env.py`](env.py)、[`dataset.py`](dataset.py)、[`obs_utils.py`](obs_utils.py) | 环境、专家数据与观测条件处理。 |
+| 模型与配置 | [`model.py`](model.py)、[`train.py`](train.py)、[`eval.py`](eval.py)、[`configs/`](configs/) | 策略结构、训练与闭环评估入口、实验配置。 |
+| 公平矩阵与历史消融 | [公平矩阵汇总](results/fair_seed42/fair_ablation.md)、[公平矩阵指标](results/fair_seed42/fair_summary.json)、[`results/ablation.md`](results/ablation.md)、[`logs/exp_log.md`](logs/exp_log.md) | 当前公平矩阵结果、历史消融归档与实验日志。 |
+| 条件评估与扩展结果 | [state-only 评估](results/eval_state.json)、[视觉评估](results/eval_vision.json)、`results/*.json` | 条件参照及各扩展实验的逐项指标。 |
+| 轨迹与训练记录 | [`results/rollouts/`](results/rollouts/)、[`results/bonus_rollouts/`](results/bonus_rollouts/)、`logs/train_spatial.log`、`logs/train_resnet18*.log`、[`results/metrics/`](results/metrics/) | 成功轨迹、ResNet 收敛图数据来源与训练指标。 |
+| 方案与调试 | [`FAIR_EXPERIMENT_PLAN.md`](FAIR_EXPERIMENT_PLAN.md)、[`debug_log.md`](debug_log.md) | 公平对照协议与 5 条实际实现/运行问题记录。 |
+| Release：源码快照 | `project5-vla-action-diffusion-source-14a93fd.tar.gz`、`project5-vla-action-diffusion-source-a2b695d.tar.gz` | 两个版本的 Project 5 源码快照。 |
+| Release：checkpoint | `project5-fair-seed42-checkpoints.tar.gz` | 公平矩阵模型权重。 |
+| Release：结果归档 | `project5-fair-seed42-results.tar.gz`、`project5-fair-seed42-reeval-c062751.tar.gz` | 公平实验原始结果与后续复评归档。 |
+| Release：校验文件 | `SHA256SUMS`、`SHA256SUMS-project5-c062751.txt` | 分别校验首批 Release 资产和后续复评资产。 |
+| Release 版本 | [project5-fair-seed42-v1.0.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-fair-seed42-v1.0.0) | 上述复现资产所在的 GitHub Release。 |
