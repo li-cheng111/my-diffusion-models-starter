@@ -162,7 +162,7 @@ ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参�
 
 | 方法 | 训练目标 | 推理方式 | 成功率 | 碰撞率 | 超时率 | 平均步数 |
 |---|---|---|---:|---:|---:|---:|
-| Small CNN（公平 DDPM，10k） | DDPM 噪声预测 | DDIM 20 步；H=16，每 4 步重规划 | 81% | 8% | 11% | 35.57 |
+| Small CNN（DDPM，10k） | DDPM 噪声预测 | DDIM 20 步；H=16，每 4 步重规划 | 81% | 8% | 11% | 35.57 |
 | ImageNet-pretrained ResNet-18（5k） | DDPM 噪声预测 | DDIM 20 步；H=16，每 4 步重规划 | 3% | 8% | 89% | 91.92 |
 | ImageNet-pretrained ResNet-18（15k） | DDPM 噪声预测 | DDIM 20 步；H=16，每 4 步重规划 | 2% | 18% | 80% | 89.29 |
 
