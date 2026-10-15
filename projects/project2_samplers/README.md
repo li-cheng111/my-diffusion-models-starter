@@ -73,9 +73,9 @@ DPM-Solver-2 令 `lambda = log(alpha / sigma)`，在 lambda 中点进行二阶�
 
 | DDIM NFE | 10 | 20 | 50 | 100 | 250 |
 |---|---:|---:|---:|---:|---:|
-| R5 FID ↓ | 53.091 | 33.610 | 23.121 | 20.111 | **18.362** |
+| R5 FID | 53.091 | 33.610 | 23.121 | 20.111 | **18.362** |
 
-数据见 [`results/p1_r5_ddim_5k.json`](results/p1_r5_ddim_5k.json)，250 NFE 样图见 [`samples/r5_baseline/ddim_nfe250.png`](samples/r5_baseline/ddim_nfe250.png)。
+数据见 [`results/p1_r5_ddim_5k.json`](results/p1_r5_ddim_5k.json)，250 NFE 样图见[`samples/r5_baseline/ddim_nfe250.png`](samples/r5_baseline/ddim_nfe250.png)。
 
 ## 四、采样轨迹对比（任务C）
 
