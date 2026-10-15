@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -12,6 +13,46 @@ RESULTS = ROOT / "results"
 
 def load(name: str) -> dict:
     return json.loads((RESULTS / name).read_text(encoding="utf-8"))
+
+
+def load_training_curve(name: str) -> tuple[list[int], list[float]]:
+    pattern = re.compile(
+        r"step\s+(\d+)/\d+\s+\|\s+loss\s+[\d.]+\s+"
+        r"\(avg100\s+([\d.]+)\)\s+\|\s+[\d.]+/s"
+    )
+    steps: list[int] = []
+    losses: list[float] = []
+    for line in (ROOT / "logs" / name).read_text(encoding="utf-8").splitlines():
+        match = pattern.search(line)
+        if match:
+            steps.append(int(match.group(1)))
+            losses.append(float(match.group(2)))
+    if not steps:
+        raise ValueError(f"No training metrics found in {name}")
+    return steps, losses
+
+
+def plot_resnet_convergence() -> None:
+    curves = [
+        ("Small CNN (batch 256, lr 1e-3)", "train_spatial.log", "#1f77b4"),
+        ("ImageNet ResNet-18, 5k (batch 128, lr 3e-4)", "train_resnet18.log", "#ff7f0e"),
+        ("ImageNet ResNet-18, 15k (batch 128, lr 1e-3)", "train_resnet18_long.log", "#2ca02c"),
+    ]
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    for label, log_name, color in curves:
+        steps, losses = load_training_curve(log_name)
+        ax.plot(steps, losses, label=label, color=color, linewidth=2)
+        ax.scatter([steps[-1]], [losses[-1]], color=color, s=24, zorder=3)
+    ax.set_xlabel("Optimizer updates")
+    ax.set_ylabel("Moving-average training loss (100 steps)")
+    ax.set_title("Small CNN vs ImageNet-pretrained ResNet-18")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=False, fontsize=8)
+    fig.tight_layout()
+    output = RESULTS / "resnet_convergence.png"
+    fig.savefig(output, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    print(output)
 
 
 def main() -> None:
@@ -57,7 +98,9 @@ def main() -> None:
     fig.tight_layout()
     output = RESULTS / "bonus_summary.png"
     fig.savefig(output, dpi=180, bbox_inches="tight")
+    plt.close(fig)
     print(output)
+    plot_resnet_convergence()
 
 
 if __name__ == "__main__":

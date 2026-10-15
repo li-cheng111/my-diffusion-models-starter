@@ -36,52 +36,55 @@ $$
 
 ## 三、实验结果
 
-BC、视觉 DDPM、视觉 FM 和 chunk 条件均使用训练 seed 42、同一批 1,000 条成功专家轨迹（按各自 H 构造动作块）、4×4 spatial CNN、余弦噪声调度、10,000 次更新和相同的 100 个评估 episode（环境 seeds 10000–10099）。
+公平对照中的 BC、视觉 DDPM、视觉 FM 和 chunk 条件均使用训练 seed 42、同一批 1,000 条成功专家轨迹（按各自 H 构造动作块）、4×4 spatial CNN、余弦噪声调度、10,000 次更新和相同的 100 个评估 episode（环境 seeds 10000–10099）。batch size 为 256，优化器为 AdamW，learning rate 为 1e-3，weight decay 为 0，EMA decay 为 0.999；每执行 4 步后重新规划。DDPM 使用 20 步 DDIM，FM 使用 10 步 Euler。公平矩阵 checkpoint 于 2026-10-13 从 Project 5 fair seed 42 Release 恢复，并用代码提交 `c062751` 重评估，没有重新训练。state-only DDPM 是不同输入条件下的参照结果，不属于视觉公平矩阵。
 
-batch size 为 256，优化器为 AdamW，learning rate 为 1e-3，weight decay 为 0，EMA decay 为 0.999；每执行 4 步后重新规划。DDPM 使用 20 步 DDIM，FM 使用 10 步 Euler。
+以下按任务要求的五条主线组织主要结果。
 
-下表按要求的五条主线整理代表结果。
-
-| 实验条件 | 代表配置 | 主要结果 | 核心观察 |
+| 实验主线 | 代表配置 | 主要结果 | 核心观察 |
 |---|---|---|---|
 | Pure BC (no diffusion) | H=16，图像 + agent state，MSE | 成功 88%，碰撞 9%，超时 3%；平均 26.95 步，末端距离 0.0913 | BC 点估计高于视觉 DDPM，接近 FM |
-| DDPM (no vision) | H=16，agent + target 坐标，DDIM 20 步 | 成功 81%，碰撞 12%，超时 7%；平均 55.89 步，末端距离 0.1075 | state-only 直接获得目标位置，但效果差于BC |
-| DDPM + vision | H=16，图像 + agent state，4×4 spatial，masked | 成功 81%，碰撞 8%，超时 11%；平均 35.57 步，末端距离 0.1339 | 超时比较明显，效果差于BC |
-| FM + vision | H=16，图像 + agent state，Euler 10 步 | 成功 87%，碰撞 7%，超时 6%；平均 29.53 步，末端距离 0.0987 | 与 BC 接近，比 DDPM 效果好 |
-| DDPM + vision Chunk 8 vs 32 vs 64 | masked H=8/32/64 成功率 89%/48%/26%；unmasked 91%/66%/28% | masked 超时率 4%/46%/73%；unmasked 2%/27%/63% | H=8 效果最优；H=32/64 超时率明显上升 |
+| DDPM (no vision) | H=16，agent + target 坐标，DDIM 20 步 | 成功 81%，碰撞 12%，超时 7%；平均 55.89 步，末端距离 0.1075 | state-only 直接获得目标坐标，输入信息与视觉策略不同 |
+| DDPM + vision | H=16，图像 + agent state，4×4 spatial，masked | 成功 81%，碰撞 8%，超时 11%；平均 35.57 步，末端距离 0.1339 | 达到项目 70% 参考目标；仅一个训练 seed |
+| FM + vision | H=16，图像 + agent state，Euler 10 步 | 成功 87%，碰撞 7%，超时 6%；平均 29.53 步，末端距离 0.0987 | 与 BC 接近；较少 NFE 不等同于实测加速 |
+| Chunk 8 vs 32 vs 64 | 视觉 DDPM；masked H=8/32/64 成功率 89%/48%/26%；unmasked 91%/66%/28% | masked 超时率 4%/46%/73%；unmasked 2%/27%/63% | H=8 点估计最高；长 chunk 的超时率较高 |
+
+以上公平条件每个只有一个训练 seed；成功率是 100 个固定评估 episode 的观测比例，不能说明训练 seed 间方差或方法差异显著。
 
 ### 1）Pure BC (no diffusion)
 
-Pure BC 直接以条件观测回归动作块，不经过扩散去噪或 Flow Matching 采样。公平矩阵中 H=16 BC 成功率为 88%，碰撞率 9%，超时率 3%；平均 26.95 步完成，平均末端距离为 0.0913。与相同观测条件、H=16 的视觉 DDPM（81%）和 FM（87%）相比，BC 没有落后，说明在当前二维任务和专家数据规模下，生成式动作建模并不自动带来更高的闭环成功率。由于每种方法只有一个训练 seed，不据此断言 BC 普遍优于生成策略。
+Pure BC 直接以图像和 agent 位置回归 H=16 动作块，不经过生成式采样。成功率为 88%，碰撞率 9%、超时率 3%；平均 26.95 步完成，末端距离为 0.0913。与同一公平协议下的视觉 DDPM（81%）和 FM（87%）相比，BC 没有落后；在当前二维任务和专家数据规模下，生成式动作建模并未自动带来更高的成功率。
 
 ### 2）DDPM (no vision)
 
-state-only DDPM 的 H=16 阶段对照使用 agent 与 target 显式坐标、20 步 DDIM，成功率为 81%。早期阶段 3 的视觉 DDPM 输入 RGB 图像与 agent 坐标，成功率为 71%。
+state-only DDPM 的 H=16 参照实验使用 agent 与 target 显式坐标、20 步 DDIM，成功率为 81%。下表将它与公平矩阵中的视觉 DDPM 并列；两者成功率点估计相同，但观测条件并不相同。
 
-| 阶段对照 | 输入条件 | 成功率 | 碰撞率 | 超时率 | 平均步数 | 末端距离 |
+| 条件 | 输入条件 | 成功率 | 碰撞率 | 超时率 | 平均步数 | 末端距离 |
 |---|---|---:|---:|---:|---:|---:|
 | DDPM (no vision) | agent + target 坐标 | 81% | 12% | 7% | 55.89 | 0.1075 |
-| DDPM + vision（早期阶段 3） | RGB 图像 + agent 坐标 | 71% | 3% | 26% | 48.70 | 0.1643 |
+| DDPM + vision | RGB 图像 + agent 坐标 | 81% | 8% | 11% | 35.57 | 0.1339 |
 
-这组阶段对照中，视觉模型成功率低 10 个百分点、碰撞率低 9 个百分点、超时率高 19 个百分点。它比较的是“直接获得目标坐标”与“从图像识别目标及障碍”的整体条件接口，不是视觉输入的单因素因果实验；state-only 也不是与视觉策略信息量相同的替代基线。若向 state-only 加入障碍物坐标，它会成为带特权几何信息的状态基线。视觉版 71% 属于早期配置结果；当前公平复评中的视觉 DDPM 为 81%，不可将两者差值归因于某一个改动。
+state-only 直接获得目标位置，却没有障碍物坐标；视觉策略则从图像识别目标与障碍。两种输入的信息量和难度不同，因此这个结果只能作为条件接口参照，不能解释为视觉单因素带来的效果变化。
 
 ### 3）DDPM + vision
 
-视觉 DDPM 的关键表征对照是全局池化与 4×4 空间池化。早期先导实验中，保留空间网格的模型比全局池化高 17 个百分点，碰撞率也更低。公平复评使用更新后的 checkpoint 与评估代码，单独列出作为当前主报告值。
+视觉 DDPM 接收 64×64 RGB 图像和 agent 坐标，使用 4×4 空间池化 CNN、H=16 masked action chunk 与 20 步 DDIM。公平复评成功率为 81%，碰撞率 8%、超时率 11%；达到项目提出的 70% 参考目标。由于只有一个训练 seed，这一结果是当前评估集上的点估计。
 
-| 视觉 DDPM 条件 | 成功率 | 碰撞率 | 超时率 | 平均步数 | 末端距离 | 阶段 |
-|---|---:|---:|---:|---:|---:|---|
-| H=16，全局池化 | 54% | 6% | 40% | 68.93 | 0.4114 | 早期先导 |
-| H=16，4×4 spatial pooling | 71% | 3% | 26% | 48.70 | 0.1643 | 早期先导 |
-| H=16，4×4 spatial pooling，padding masked | 81% | 8% | 11% | 35.57 | 0.1339 | seed 42 公平复评 |
+以下闭环图展示四条成功轨迹，作为定性示例，与 100 episode 汇总指标互补。
 
-早期 54% 对 71% 支持保留二维位置关系有利于识别目标与障碍；71% 到公平复评 81% 则来自不同阶段的模型/评估，不能解释为池化方式带来的提升。公平矩阵中的 H=16 视觉 DDPM 达到项目提出的 70% 参考目标，但这是单训练 seed 的点估计。
+<table>
+  <tr>
+    <td align="center"><img src="results/rollouts/success_ep000.png" alt="视觉 DDPM 成功轨迹 episode 0" width="320"/><br/><sub>Episode 0</sub></td>
+    <td align="center"><img src="results/rollouts/success_ep001.png" alt="视觉 DDPM 成功轨迹 episode 1" width="320"/><br/><sub>Episode 1</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="results/rollouts/success_ep002.png" alt="视觉 DDPM 成功轨迹 episode 2" width="320"/><br/><sub>Episode 2</sub></td>
+    <td align="center"><img src="results/rollouts/success_ep003.png" alt="视觉 DDPM 成功轨迹 episode 3" width="320"/><br/><sub>Episode 3</sub></td>
+  </tr>
+</table>
 
 ### 4）FM + vision
 
-FM 在相同视觉条件、H=16 和公平数据/评估 episode 下达到 87% 成功率，碰撞率 7%、超时率 6%；采样使用 10 步 Euler。对应视觉 DDPM 为 81%（20 步 DDIM），BC 为 88%（直接回归动作）。FM 与 BC 的点估计相差 1 个百分点，比 DDPM 高 6 个百分点；由于每种方法只有一个训练 seed，不能据此判断差异稳定或显著。10 对 20 个采样步只说明配置中的模型调用步数不同，本项目没有统一测量端到端延迟，不能据此声称实测速度倍数。
-
-早期先导 FM 成功率为 57%（碰撞 9%、超时 34%），早期 BC 为 58%（12%、30%）。这些结果与公平复评属于不同实验阶段/配置，应作历史记录而非同一排名。
+FM 在相同视觉条件、H=16 和公平评估 episode 下达到 87% 成功率，碰撞率 7%、超时率 6%；采样使用 10 步 Euler。BC 为 88%，视觉 DDPM 为 81%。这些单种子点估计显示 FM 与 BC 接近，但不能据此判断差异稳定或显著；采样步数较少也不等于实测端到端加速。FM 替代 DDPM 的具体实现和并列数据见扩展实验第一项。
 
 ### 5）Chunk 8 vs 32 vs 64
 
@@ -98,59 +101,84 @@ FM 在相同视觉条件、H=16 和公平数据/评估 episode 下达到 87% 成
 | 64 | 是 | 26% | 1% | 73% | 85.86 | 0.3668 | 0.5033 |
 | 64 | 否 | 28% | 9% | 63% | 81.96 | 0.4147 | 0.5955 |
 
-H=8 的观测成功率最高。H 增至 32、64 后，masked 成功率由 89% 降至 48%、26%，超时率升至 46%、73%。这与短专家轨迹在长动作块中含有更多重复尾部动作相符：demo 的重复填充比例约为 H=8：12.9%、H=16：27.5%、H=32：51.7%、H=64：74.9%；但这并不能证明 padding 是退化的唯一原因。各 H 下 masked 的成功率点估计均低于 unmasked，也不足以证明 mask 有害，因为每种配置只有一个训练 seed，mask 的损失归一化和尾部动作语义仍需要进一步消融。早期 DDPM H=32 的 14% 成功率（碰撞 1%、超时 85%）来自不同配置，不与本表的 48% / 66% 直接比较。
+H=8 的观测成功率最高。H 增至 32、64 后，masked 成功率降至 48%、26%，超时率升至 46%、73%，说明长动作块在当前重规划设置下更难稳定完成任务。masked 与 unmasked 的差异不能证明 mask 有害：每种条件只有一个训练 seed，mask 的损失归一化与尾部动作语义仍可进一步验证。
 
 ## 四、扩展实验
 
-| 实验 | 设置 | 成功 / 碰撞 / 超时 | 说明 |
-|---|---|---:|---|
-| 双目标条件 | H=16，两个固定目标位置 | 97% / 3% / 0% | 两目标成功率分别为 96.2%（50/52）与 97.9%（47/48） |
-| ImageNet ResNet-18 | 5,000 步 | 3% / 8% / 89% | seeds 30000–30099 |
-| ImageNet ResNet-18（延长训练） | 15,000 步 | 2% / 18% / 80% | 延长训练未改善该设置 |
-| 移动障碍评估 | 静态训练 checkpoint，障碍速度 0.025 | 72% / 20% / 8% | 未在移动环境重新训练；碰撞率上升 |
+本节按四项加分要求分别报告实现、评估和主要结论。总览图汇总扩展实验的闭环结果，并标示多目标评测中的目标位置与分模式成功率。
 
-双目标实验表明模型能完成两种图像中的目标条件，但目标在每回合观测中已明确，不能证明同一观测下生成两类动作轨迹。移动障碍结果说明静态策略有一定迁移能力，但碰撞率上升是清晰的泛化代价。
+![扩展实验闭环结果与双目标示意](results/bonus_summary.png)
 
-### 训练曲线与收敛分析
+### 1）Flow Matching 替代 DDPM（+10）
 
-![先导训练损失曲线](results/loss_curve.png)
+FM 将 DDPM 的噪声预测目标替换为速度场回归，并用 Euler ODE 从噪声生成动作块。下表中的 BC、DDPM 与 FM 使用同一视觉条件、H=16、专家数据及固定评估集；各方法按照自身生成机制推理。
 
-图：先导运行中每 100 步移动平均 loss；这些曲线不是 10 条件公平矩阵的训练曲线。4×4 spatial DDPM 的末段 loss 为 0.0968，低于全局池化 DDPM 的 0.1177；state DDPM 为 0.1218，FM 为 0.1338。各曲线整体下降并在后段趋稳，但 loss 只度量去噪/回归目标，不等价于闭环成功率。全局池化与空间池化的末段 loss 差距有限，闭环成功率却相差 17 个百分点，说明保留物体位置关系对控制更关键；H=32 的失败也说明单看 loss 可能掩盖过长动作块造成的超时。
+| 方法 | 训练目标 | 推理方式 | 成功率 | 碰撞率 | 超时率 | 平均步数 |
+|---|---|---|---:|---:|---:|---:|
+| Pure BC | 动作块 MSE | 直接回归 | 88% | 9% | 3% | 26.95 |
+| DDPM + vision | 噪声预测 | DDIM，20 步 | 81% | 8% | 11% | 35.57 |
+| FM + vision | 速度场回归 | Euler，10 步 | 87% | 7% | 6% | 29.53 |
 
-ImageNet ResNet-18 加分实验的训练日志还提供了步速和末段 loss。以下是 AutoDL 运行日志中的约数；步数、训练预算及配置不同，不能当作严格的同预算收敛速度基准。
+FM 已完成对 DDPM 训练目标的替换，成功率点估计与 BC 接近。10 步对 20 步只表示采样调用配置较少，本实验没有测量端到端推理延迟，不能声称实测加速倍数。
 
-| 编码器 | 参数量 | 更新步数 | 日志末段吞吐 | 末段 100-step 平均 loss | 闭环成功率 |
-|---|---:|---:|---:|---:|---:|
-| 小型 4×4 spatial CNN | 0.59M | 10,000 | 65.9 step/s | 0.0968 | 71% |
-| ImageNet ResNet-18 | 11.48M | 5,000 | 63.8 step/s | 0.1168 | 3% |
-| ImageNet ResNet-18（延长） | 11.48M | 15,000 | 67.0 step/s | 0.0950 | 2% |
+### 2）Multi-modal demo 数据集：多个 target（+10）
 
-延长 ResNet-18 训练使 loss 降到与小型 CNN 相近的水平，但闭环成功率没有改善。现有证据支持“更多预训练参数并未自动转化为本任务的控制收益”；由于没有使用统一停止阈值和匹配 wall-clock 预算，本实验只能算有实测吞吐的描述性对照，不能声称已严格测定两种编码器的收敛速度。
+训练 demo 覆盖两个 target 坐标：$(-0.65, 0.55)$ 与 $(0.65, 0.55)$。H=16 视觉 DDPM 在 100 个 episode 上总体成功 97 次；按目标模式统计如下。
 
-### 成功闭环轨迹
+| 目标模式 | 目标坐标 | Episode 数 | 成功数 | 成功率 |
+|---|---:|---:|---:|---:|
+| Mode 0 | $(-0.65, 0.55)$ | 52 | 50 | 96.2% |
+| Mode 1 | $(0.65, 0.55)$ | 48 | 47 | 97.9% |
+| 合计 | 两种目标 | 100 | 97 | 97.0% |
 
-以下展示四个成功 rollout。蓝线为策略执行轨迹，圆点为起点，红星为目标，灰色方块为障碍物。采用 2×2 图组，便于横向比较不同场景中的闭环路径；更多轨迹见 `results/rollouts/` 和 `results/bonus_rollouts/`。
+总体碰撞率为 3%，超时率为 0%。下面分别展示两个目标条件下的成功闭环轨迹。由于目标位置在图像中可见，这说明模型能处理两个目标条件，但尚不能证明同一观测下生成双峰动作分布。
 
 <table>
   <tr>
-    <td align="center"><img src="results/rollouts/success_ep000.png" alt="成功闭环轨迹 episode 0" width="420"/><br/><sub>Episode 0</sub></td>
-    <td align="center"><img src="results/rollouts/success_ep001.png" alt="成功闭环轨迹 episode 1" width="420"/><br/><sub>Episode 1</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="results/rollouts/success_ep002.png" alt="成功闭环轨迹 episode 2" width="420"/><br/><sub>Episode 2</sub></td>
-    <td align="center"><img src="results/rollouts/success_ep003.png" alt="成功闭环轨迹 episode 3" width="420"/><br/><sub>Episode 3</sub></td>
+    <td align="center"><img src="results/bonus_rollouts/multimodal_success_ep004.png" alt="多目标 Mode 0 成功轨迹" width="320"/><br/><sub>Mode 0：左侧目标</sub></td>
+    <td align="center"><img src="results/bonus_rollouts/multimodal_success_ep001.png" alt="多目标 Mode 1 成功轨迹" width="320"/><br/><sub>Mode 1：右侧目标</sub></td>
   </tr>
 </table>
 
-![扩展实验结果汇总](results/bonus_summary.png)
+### 3）ImageNet-pretrained ResNet-18 替换小 CNN（+5）
+
+ResNet-18 加载 ImageNet 预训练权重（`vision_pretrained: true`），参数量 11.48M；小 CNN 参数量 0.59M。AutoDL 日志中的更新速度与末段 100-step 平均 loss 如下。
+
+| Backbone | 更新步数 | Batch / learning rate | 吞吐 | 末段 avg100 loss |
+|---|---:|---:|---:|---:|
+| Small CNN | 10,000 | 256 / $1\times10^{-3}$ | 65.9 step/s | 0.0968 |
+| ImageNet ResNet-18 | 5,000 | 128 / $3\times10^{-4}$ | 63.8 step/s | 0.1168 |
+| ImageNet ResNet-18（延长训练） | 15,000 | 128 / $1\times10^{-3}$ | 67.0 step/s | 0.0950 |
+
+![Small CNN 与 ImageNet-pretrained ResNet-18 的收敛曲线](results/resnet_convergence.png)
+
+同样更新至 5,000 步时，小 CNN 的 avg100 loss 为 0.1113，ResNet-18 为 0.1168；ResNet-18 延长至 15,000 步后降到 0.0950，接近小 CNN 10,000 步时的 0.0968。它约多用 50% 更新步数才到达相近训练 loss，而单步吞吐相近。batch size、部分学习率和训练 seed 不同，因此这是描述性比较，不是严格控制变量结论。闭环评估中 ResNet-18 5k/15k 成功率分别为 3%/2%，低于当前小 CNN 公平矩阵的 81% 参考值；评估 seeds 和配置不同，这一差异也不作严格排名。
+
+### 4）移动障碍环境泛化（+10）
+
+复用静态障碍训练得到的同一个 H=16 视觉 DDPM checkpoint，不在移动障碍环境重新训练；测试时障碍速度设为 0.025。两种环境评测各 100 个 episode，使用相同模型，seed 区间不同。
+
+| 测试环境 | 评估 seeds | 成功率 | 碰撞率 | 超时率 | 平均步数 | 末端距离 |
+|---|---|---:|---:|---:|---:|---:|
+| 静态障碍 | 10000–10099 | 71% | 3% | 26% | 48.70 | 0.1643 |
+| 移动障碍（速度 0.025） | 40000–40099 | 72% | 20% | 8% | 34.94 | 0.1867 |
+
+成功率点估计相近，但碰撞率由 3% 升至 20%，说明策略具备一定迁移能力，安全鲁棒性仍不足。动态环境中平均步数较低主要伴随更多碰撞，不能解释为路径效率改善。下方为移动障碍测试中的两条成功轨迹。
+
+<table>
+  <tr>
+    <td align="center"><img src="results/bonus_rollouts/moving_success_ep000.png" alt="移动障碍成功轨迹 episode 0" width="320"/><br/><sub>Episode 0</sub></td>
+    <td align="center"><img src="results/bonus_rollouts/moving_success_ep005.png" alt="移动障碍成功轨迹 episode 5" width="320"/><br/><sub>Episode 5</sub></td>
+  </tr>
+</table>
 
 ## 对照原始任务要求的自查与反思
 
 ### 自查问题
 
-1. **为什么预测动作块？** 一次预测 $H$ 步能减少每个环境步都重新调用生成模型的开销，并让局部动作保持连贯；每执行 `exec_steps` 步再观察和规划，则保留闭环纠偏能力。若 `exec_steps=1`，反馈更及时，但会增加采样调用、推理延迟与动作抖动风险。本项目早期全局池化模型把重规划改为每步一次后仍为 54%，说明重规划频率不能弥补视觉表征丢失的位置信息。
+1. **为什么预测动作块？** 一次预测 $H$ 步能减少每个环境步都重新调用生成模型的开销，并让局部动作保持连贯；每执行 `exec_steps` 步再观察和规划，则保留闭环纠偏能力。若 `exec_steps=1`，反馈更及时，但会增加采样调用与推理开销。本项目固定每 4 步重规划，在闭环纠偏和调用成本之间折中。
 2. **多模态下 MSE BC 会怎样？** 若同一观测有绕障碍物左、右两条合理轨迹，MSE 往往趋向两种动作的条件均值；均值轨迹可能穿过障碍，或落在数据里没有出现过的中间模式。扩散策略可通过不同噪声样本表达多个动作分布模式。但本项目的双目标实验是目标位置不同、图像条件也不同，证明了两种目标条件都可完成，**没有证明同一观测下生成左右两种绕行轨迹**。
-3. **阶段 2 与阶段 3 的差值表示什么？** 探索性结果是 state-only 81%、视觉版 71%，差值为 −10 个百分点；碰撞率从 12% 降至 3%，超时率从 7% 升至 26%。它反映“显式目标坐标但无障碍坐标”与“从图像推断目标和障碍”两套输入/任务难度的差异，不是单独的视觉因果效应。若把障碍坐标也放入 state，比较就变成特权状态信息与视觉感知的对照。
+3. **state-only 与视觉策略的结果能否直接比较？** 两者在当前记录中的成功率点估计均为 81%，但 state-only 直接输入目标坐标，视觉策略则从图像识别目标和障碍；碰撞率、超时率和平均步数也不同。因此它们是不同观测条件下的参照，不是信息量匹配的单因素视觉消融。若把障碍坐标也放入 state，就会成为带特权几何信息的基线。
 4. **padding 如何影响策略？** 专家轨迹短于 H 时重复末动作会形成非有效尾部监督；H 越大，重复槽位越多，动作块中真实运动信息占比越小，可能使预测变迟缓并增加超时。本实验记录了有效槽位掩码并对 masked/unmasked 做了公平比较；单训练 seed 下 masked 点估计反而略低，故不能宣称掩码必然提升成功率。下一步应检查 mask 的损失归一化、尾部动作语义，并增加训练 seeds。
 5. **FM 相对 DDPM 对实时控制的潜在收益是什么？** FM 用 ODE 速度场从噪声积分到动作，当前配置用 10 步 Euler；DDPM 使用 20 步 DDIM，因此前者理论上需要更少的模型函数调用。公平矩阵中 FM 成功率 87%、DDPM 81%，但区间重叠且只有一个训练 seed；本项目没有测端到端延迟，不能据此声称 FM 快 5 倍或显著优于 DDPM。
 
@@ -166,7 +194,7 @@ ImageNet ResNet-18 加分实验的训练日志还提供了步速和末段 loss�
 | TODO 20：视觉编码与 observation conditioning | `model.py`；CNN + 4×4 spatial pooling；图像和 agent state 条件 | 已实现；全局池化负结果保留作对照 |
 | TODO 21：闭环评估 | `eval.py`；成功、碰撞、超时、步数、末端距离和轨迹目标距离 | 已实现；每个公平条件 100 episodes |
 | test 环境成功率 ≥70% | 公平视觉 DDPM H=16 masked：81%；移动障碍评估：72% | 达到点估计目标；移动障碍碰撞率 20%，安全性仍有限 |
-| 消融、训练曲线、阶段 2/3 分析 | 本 README 的主矩阵、先导对照和曲线解释；`results/ablation.md`、`results/fair_seed42/` | 已报告；明确区分探索性结果与公平复评 |
+| 消融、训练曲线与条件分析 | 本 README 的五类主结果、四项扩展和收敛曲线；`results/ablation.md`、`results/fair_seed42/` | 已报告；主结论以当前公平复评为准 |
 | ≥3 个成功 rollout、实验日志、≥3 条真实 debug 记录 | `results/rollouts/`（本文以 2×2 图组嵌入 4 张）；`logs/exp_log.md`；`debug_log.md`（5 条） | 文件齐全 |
 | FM 加分项 | 公平矩阵 H=16 masked：FM 87%，10-step Euler；DDPM 81%，20-step DDIM | 已实现并比较；未测实际 wall-clock 加速倍数 |
 | 多目标 / multimodal demos | 双目标数据，两个目标条件成功率 96.2% / 97.9% | 部分满足：未证明同一观测下的双峰动作分布，不夸称完整通过 +10 |
@@ -197,15 +225,15 @@ python run_bonus_experiments.py --preset all
 python plot_bonus.py
 ```
 
-移动障碍 preset 使用仓库中的 `ckpts/model_final.pt`，不在动态环境重新训练。该 checkpoint 属于早期实验；公平矩阵运行时 checkpoint 写入 `runs/`，已提交结果摘要位于 `results/fair_seed42/`。可选的 `monitor_dashboard.py` 用于查看运行状态；`launch_after_gpu_idle.sh` 面向 AutoDL，会等待 Project 4 相关进程结束及 GPU 空闲。
+移动障碍 preset 使用仓库中的静态训练 checkpoint `ckpts/model_final.pt`，不在动态环境重新训练；公平矩阵运行时 checkpoint 写入 `runs/`，已提交结果摘要位于 `results/fair_seed42/`。可选的 `monitor_dashboard.py` 用于查看运行状态；`launch_after_gpu_idle.sh` 面向 AutoDL，会等待 Project 4 相关进程结束及 GPU 空闲。
 
 ## 文件索引
 
 - `env.py`、`dataset.py`、`obs_utils.py`：环境、专家数据与观测条件处理。
 - `model.py`、`train.py`、`eval.py`：策略结构、训练与闭环评估；`configs/`：实验配置。
-- [公平矩阵汇总](results/fair_seed42/fair_ablation.md)；[公平矩阵指标](results/fair_seed42/fair_summary.json)；[先导消融](results/ablation.md)；[实验日志](logs/exp_log.md)。
-- [阶段 2 state-only 评估](results/eval_state.json)、[阶段 3 视觉评估](results/eval_vision.json)：原始阶段对照；`results/rollouts/`、`results/bonus_rollouts/`：示例轨迹；`results/*.json`：扩展实验指标。
-- [先导训练日志](logs/train_spatial.log)、`logs/train_resnet18*.log` 与 `results/metrics/`：曲线和吞吐数据来源；[公平实验方案](FAIR_EXPERIMENT_PLAN.md)：对照协议；[调试记录](debug_log.md)：5 条实际实现/运行问题。
+- [公平矩阵汇总](results/fair_seed42/fair_ablation.md)；[公平矩阵指标](results/fair_seed42/fair_summary.json)；`results/ablation.md`：历史消融指标归档，不纳入正文主结果；[实验日志](logs/exp_log.md)。
+- [state-only 评估](results/eval_state.json)、[视觉评估](results/eval_vision.json)：条件参照；`results/rollouts/`、`results/bonus_rollouts/`：示例轨迹；`results/*.json`：扩展实验指标。
+- `logs/train_spatial.log`、`logs/train_resnet18*.log`：ResNet 收敛图的数据来源；`results/metrics/`：训练指标；[公平实验方案](FAIR_EXPERIMENT_PLAN.md)：对照协议；[调试记录](debug_log.md)：5 条实际实现/运行问题。
 - [实验日志模板](experiment_log_template.md)是通用模板，其中示例数据不是本项目结果。
 
 ## 从 GitHub Release 恢复并重评估
