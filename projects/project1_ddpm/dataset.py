@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import random
 from typing import Callable, Optional
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
+
+
+def _seed_worker(worker_id: int) -> None:
+    del worker_id
+    worker_seed = torch.initial_seed() % (2**32)
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 
 def get_transform(
@@ -83,8 +92,13 @@ def get_dataloader(
     pin_memory: bool = True,
     shuffle: bool = True,
     drop_last: bool = True,
+    generator: Optional[torch.Generator] = None,
+    persistent_workers: Optional[bool] = None,
 ) -> DataLoader:
     dataset = get_dataset(name, root=root, image_size=image_size, train=True)
+    if persistent_workers is None:
+        persistent_workers = num_workers > 0
+
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -92,7 +106,9 @@ def get_dataloader(
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,
-        persistent_workers=num_workers > 0,
+        persistent_workers=num_workers > 0 and persistent_workers,
+        generator=generator,
+        worker_init_fn=_seed_worker,
     )
 
 

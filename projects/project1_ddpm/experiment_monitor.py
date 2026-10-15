@@ -46,6 +46,8 @@ class RunSpec:
 
 
 def _step(path: Path) -> int:
+    if path.stem == "grid":
+        return 10**12
     match = STEP_RE.search(path.stem)
     return int(match.group(1)) if match else 0
 
@@ -150,14 +152,26 @@ class Dashboard:
             final = (ckpt / "final.pt").exists() and loss_path.is_file()
             step = spec.total_steps if final else max(steps, default=0)
             active = runner_alive and active_label == spec.label
-            failed = f"{spec.label} training failed" in log_text
+            failed = any(
+                line.startswith(f"{spec.label} training failed:")
+                or (
+                    line.startswith(f"{spec.label} EMA ")
+                    and " evaluation failed:" in line
+                )
+                or line.startswith(f"{spec.label} sample generation failed:")
+                for line in log_text.splitlines()
+            )
             status = "evaluating" if final and active else (
                 "completed" if final else (
                     "running" if active else ("failed" if failed else ("stopped" if step else "pending"))
                 )
             )
             latest = loss[-1] if loss else {}
-            sample_paths = sorted((spec.path / "samples").glob("step_*.png"), key=_step)[-8:]
+            sample_paths = sorted(
+                [* (spec.path / "samples").glob("step_*.png"), spec.path / "samples" / "grid.png"],
+                key=_step,
+            )[-8:]
+            sample_paths = [path for path in sample_paths if path.is_file()]
             checkpoint_paths = list(ckpt.glob("*.pt"))
             latest_checkpoint = (
                 "final.pt" if final else max(checkpoint_paths, key=_step).name if checkpoint_paths else None

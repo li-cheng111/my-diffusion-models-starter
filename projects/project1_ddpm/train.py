@@ -6,12 +6,14 @@ import argparse
 import copy
 import csv
 import math
+import os
 import random
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
+import numpy as np
 import torchvision.utils as vutils
 import yaml
 from torch.cuda.amp import GradScaler, autocast
@@ -113,14 +115,44 @@ class EMABank:
 
 
 def _set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
 
+def _capture_rng_state(data_generator: Optional[torch.Generator]) -> Dict[str, Any]:
+    state: Dict[str, Any] = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["cuda"] = torch.cuda.get_rng_state_all()
+    if data_generator is not None:
+        state["data_generator"] = data_generator.get_state()
+    return state
+
+
+def _restore_rng_state(
+    state: Optional[Dict[str, Any]], data_generator: Optional[torch.Generator]
+) -> None:
+    if not state:
+        return
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    torch.set_rng_state(state["torch"].cpu())
+    if torch.cuda.is_available() and "cuda" in state:
+        torch.cuda.set_rng_state_all([item.cpu() for item in state["cuda"]])
+    if data_generator is not None and "data_generator" in state:
+        data_generator.set_state(state["data_generator"].cpu())
+
+
 def _save_loss_history(history: list[Dict[str, float]], output_dir: Path) -> None:
     csv_path = output_dir / "loss_history.csv"
-    with csv_path.open("w", newline="") as handle:
+    temporary_path = csv_path.with_name(csv_path.name + ".tmp")
+    with temporary_path.open("w", newline="") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=[
@@ -135,6 +167,9 @@ def _save_loss_history(history: list[Dict[str, float]], output_dir: Path) -> Non
         )
         writer.writeheader()
         writer.writerows(history)
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary_path.replace(csv_path)
 
     # Plotting happens only when the training script is actually run; this
     # function is intentionally not invoked during repository preparation.
@@ -166,10 +201,13 @@ def _save_checkpoint(
     epoch: int,
     global_step: int,
     resume_schedule_origin_step: Optional[int] = None,
+    attempt_step: int = 0,
+    data_generator: Optional[torch.Generator] = None,
 ) -> None:
     state: Dict[str, Any] = {
         "epoch": epoch,
         "global_step": global_step,
+        "attempt_step": attempt_step,
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "config": cfg,
@@ -182,7 +220,12 @@ def _save_checkpoint(
         state["scaler"] = scaler.state_dict()
     if resume_schedule_origin_step is not None:
         state["resume_schedule_origin_step"] = resume_schedule_origin_step
-    torch.save(state, path)
+    state["rng_state"] = _capture_rng_state(data_generator)
+    temporary_path = path.with_name(path.name + ".tmp")
+    torch.save(state, temporary_path)
+    with temporary_path.open("rb") as handle:
+        os.fsync(handle.fileno())
+    temporary_path.replace(path)
 
 
 def _lr_for_update(cfg: Dict[str, Any], step: int) -> float:
@@ -239,12 +282,19 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
     with (output_dir / "config.yaml").open("w") as handle:
         yaml.safe_dump(cfg, handle, sort_keys=False)
 
+    training_cfg = cfg["training"]
+    exact_epoch_resume = bool(training_cfg.get("exact_epoch_resume", False))
+    data_generator = torch.Generator() if exact_epoch_resume else None
+    if data_generator is not None:
+        data_generator.manual_seed(int(cfg.get("seed", 42)) + 1_000_003)
     loader = get_dataloader(
         name=cfg["dataset"]["name"],
         batch_size=cfg["dataset"]["batch_size"],
         root=cfg["dataset"].get("root", "./data"),
         image_size=cfg["dataset"].get("image_size"),
         num_workers=cfg["dataset"].get("num_workers", 4),
+        generator=data_generator,
+        persistent_workers=False if exact_epoch_resume else None,
     )
     model = UNet(**cfg["model"]).to(device)
     schedule = DDPMSchedule(**cfg["diffusion"]).to(device)
@@ -277,7 +327,9 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
 
     start_epoch = 0
     global_step = 0
+    micro_step = 0
     resume_schedule_origin_step: Optional[int] = None
+    resume_rng_state: Optional[Dict[str, Any]] = None
     if resume:
         checkpoint = torch.load(resume, map_location=device)
         model.load_state_dict(checkpoint["model"])
@@ -290,10 +342,13 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
             scaler.load_state_dict(checkpoint["scaler"])
         start_epoch = int(checkpoint.get("epoch", -1)) + 1
         global_step = int(checkpoint.get("global_step", 0))
+        micro_step = int(checkpoint.get("attempt_step", 0))
+        resume_rng_state = checkpoint.get("rng_state")
         if resume_lr_cfg is not None:
             resume_schedule_origin_step = int(
                 checkpoint.get("resume_schedule_origin_step", global_step)
             )
+    _restore_rng_state(resume_rng_state, data_generator)
 
     if resume_lr_cfg is not None:
         if resume_schedule_origin_step is None:
@@ -316,7 +371,6 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
             config=cfg,
         )
 
-    training_cfg = cfg["training"]
     log_every = int(training_cfg.get("log_every", 50))
     sample_every = int(training_cfg.get("sample_every", 1000))
     ckpt_every = int(training_cfg.get("ckpt_every", 5000))
@@ -328,9 +382,14 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
     min_snr_gamma = float(training_cfg.get("min_snr_gamma", 5.0))
     prediction_type = str(training_cfg.get("prediction_type", "epsilon"))
     history: list[Dict[str, float]] = []
+    history_path = output_dir / "loss_history.csv"
+    if resume and exact_epoch_resume and history_path.is_file():
+        with history_path.open(newline="") as handle:
+            for row in csv.DictReader(handle):
+                if float(row["step"]) <= global_step:
+                    history.append({key: float(value) for key, value in row.items()})
     start_time = time.time()
     last_epoch = start_epoch - 1
-    micro_step = 0
 
     model.train()
     optimizer.zero_grad(set_to_none=True)
@@ -431,7 +490,8 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
             if global_step % log_every == 0:
                 print(
                     f"[epoch {epoch:03d} step {global_step:06d}] "
-                    f"loss={row['loss']:.5f} lr={lr_now:.3e}"
+                    f"loss={row['loss']:.5f} lr={lr_now:.3e}",
+                    flush=True,
                 )
                 if wandb is not None:
                     wandb.log({"loss": row["loss"], "lr": lr_now}, step=global_step)
@@ -454,6 +514,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                     schedule,
                     device=device,
                     prediction_type=prediction_type,
+                    clip_denoised=bool(training_cfg.get("clip_denoised_samples", False)),
                 )
                 vutils.save_image(
                     denormalize(samples),
@@ -463,7 +524,7 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                 if was_training:
                     sample_model.train()
 
-            if ckpt_every > 0 and global_step % ckpt_every == 0:
+            if not exact_epoch_resume and ckpt_every > 0 and global_step % ckpt_every == 0:
                 _save_checkpoint(
                     output_dir / "ckpt" / f"step_{global_step:06d}.pt",
                     model,
@@ -475,8 +536,26 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
                     epoch,
                     global_step,
                     resume_schedule_origin_step,
+                    micro_step,
+                    data_generator,
                 )
 
+        _save_loss_history(history, output_dir)
+        if exact_epoch_resume:
+            _save_checkpoint(
+                output_dir / "ckpt" / "epoch_latest.pt",
+                model,
+                optimizer,
+                lr_scheduler,
+                ema,
+                scaler,
+                cfg,
+                epoch,
+                global_step,
+                resume_schedule_origin_step,
+                micro_step,
+                data_generator,
+            )
         if max_steps is not None and global_step >= max_steps:
             break
 
@@ -491,6 +570,8 @@ def train(cfg: Dict[str, Any], resume: Optional[str] = None) -> None:
         last_epoch,
         global_step,
         resume_schedule_origin_step,
+        micro_step,
+        data_generator,
     )
     _save_loss_history(history, output_dir)
     if wandb is not None:
