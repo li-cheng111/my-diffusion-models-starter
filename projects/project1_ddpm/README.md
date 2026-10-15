@@ -83,6 +83,16 @@ x_t &= \sqrt{\bar{\alpha}_t}\,x_0\quad+ \sqrt{1 - \bar{\alpha}_t}\,\epsilon
 MNIST 基线使用 linear schedule、50 epoch、23,400 steps，最后记录 loss 为 0.01151，使用 EMA 生成 5,000 张样本的FID 为 32.8913。该结果的主要意义是验证从加噪、时间嵌入、ResBlock 注入到反向
 采样的完整链路。
 
+<p align="center">
+  <img src="runs/exp_mnist_baseline/loss_curve.png" alt="图1 MNIST 基础档训练损失曲线" />
+</p>
+<p align="center"><em>图 1　MNIST 基础档 50 epoch 训练损失曲线</em></p>
+
+<p align="center">
+  <img src="runs/exp_mnist_baseline/samples_inference_ema/grid.png" alt="图2 MNIST 基础档 EMA 样本网格" />
+</p>
+<p align="center"><em>图 2　MNIST 基础档最终 EMA 样本网格</em></p>
+
 ### 4.2 CIFAR-10 进阶档
 
 进阶基线使用 CIFAR-10、200 epoch、78,000 steps、linear beta 和 $`\epsilon`$ MSE，维护
@@ -92,6 +102,16 @@ raw 与 EMA 权重。最终 loss 为 0.01938，训练约 98.2 分钟：
 - raw FID：28.7464；
   
 因此 EMA 对采样质量有明显帮助，但这个单次结果距离 $`\mathrm{FID}\le 15`$ 仍有 4.2879。
+
+<p align="center">
+  <img src="runs/exp_cifar10_advanced/loss_curve.png" alt="图3 CIFAR-10 进阶基线训练损失曲线" />
+</p>
+<p align="center"><em>图 3　CIFAR-10 进阶基线训练损失曲线</em></p>
+
+<p align="center">
+  <img src="runs/exp_cifar10_advanced/samples_inference_ema/grid.png" alt="图4 CIFAR-10 进阶基线 EMA 样本网格" />
+</p>
+<p align="center"><em>图 4　CIFAR-10 进阶基线最终 EMA 样本网格</em></p>
 
 ## 五、挑战档：linear 与 cosine
 
@@ -133,6 +153,16 @@ EMA 对照和裁剪 $`x_0`$：
 | R6 | Min-SNR $`\gamma=5`$ + late decay | 17.2559 | 16.9445 | **15.8562** | 17.8510 |
 
 R5 比 R4 的最佳值改善 0.3569，说明在当前配置下后期学习率衰减有效；R6 比 R5 高 0.4177，说明直接使用 Min-SNR $`\gamma=5`$ 没有解决当前问题。
+
+<p align="center">
+  <img src="results/fid15_final/r5_late_decay/loss_curve.png" alt="图5 R5 训练损失曲线" />
+</p>
+<p align="center"><em>图 5　R5 cosine beta + uniform epsilon MSE + late decay 训练损失曲线</em></p>
+
+<p align="center">
+  <img src="results/fid15_final/r5_late_decay/best_grid_ema9999_clipx0.png" alt="图6 R5 EMA 0.9999 逐步裁剪 x0 样本网格" />
+</p>
+<p align="center"><em>图 6　R5 EMA 0.9999、逐步裁剪预测 x_0 的最佳样本网格</em></p>
 
 ### 6.5 R7：v-prediction
 
@@ -300,41 +330,7 @@ seed46 = 15.2086
 - lr25_200ep_final.pt
 - 30/50 epoch 学习率筛选 checkpoint、MNIST 临时产物和中间样本压缩包
 
-## 十一、训练曲线与样本图
-
-以下图片直接引用仓库中已经保存的 PNG，不是根据文字结果重新绘制的示意图。
-
-### 11.1 MNIST 基础档
-
-训练曲线：
-
-![MNIST 50 epoch training loss curve](runs/exp_mnist_baseline/loss_curve.png)
-
-最终 EMA 样本网格：
-
-![MNIST final EMA sample grid](runs/exp_mnist_baseline/samples_inference_ema/grid.png)
-
-### 11.2 CIFAR-10 进阶基线
-
-训练曲线：
-
-![CIFAR-10 baseline training loss curve](runs/exp_cifar10_advanced/loss_curve.png)
-
-最终 EMA 样本网格：
-
-![CIFAR-10 baseline EMA sample grid](runs/exp_cifar10_advanced/samples_inference_ema/grid.png)
-
-### 11.3 当前最佳 R5
-
-R5 的训练曲线：
-
-![R5 training loss curve](results/fid15_final/r5_late_decay/loss_curve.png)
-
-R5 EMA 0.9999、逐步裁剪预测 $`x_0`$ 的最终样本网格：
-
-![R5 EMA 0.9999 clipped x0 sample grid](results/fid15_final/r5_late_decay/best_grid_ema9999_clipx0.png)
-
-## 十二、自查问题（逐题回答）
+## 十一、自查问题（逐题回答）
 
 ### 1. 公式映射：`q_sample` 中的表达式对应论文哪个公式？
 
@@ -402,13 +398,13 @@ x_t=\sqrt{\bar{\alpha}_t}x_0+\sqrt{1-\bar{\alpha}_t}\epsilon,
 
 在改进后的完整 U-Net、逐步裁剪 $`x_0`$ 和诊断路径下，200 epoch 的结论发生改变：R1 linear 的最佳 EMA FID 为 `18.5210`，R3 cosine 的最佳 EMA FID 为 `15.5340`，R5 cosine 进一步达到 `15.4385`。这说明 schedule 的效果依赖网络、loss、采样端点处理、EMA 和训练预算；后续补充 50 epoch 严格对照后，才可以回答“50 epoch 时哪个更好”的经验问题。
 
-## 十三、我学到的最有价值的一件事
+## 十二、我学到的最有价值的一件事
 
 最有价值的认识是：**训练 loss 下降并不等价于生成质量和 FID 一定改善，必须把 schedule、网络、采样器、EMA 和评估协议作为一条完整链路一起验证。**
 
 本项目中，高学习率候选在 30 epoch 粗筛时的平均噪声预测 loss 略低，但快速 FID 更差；cosine 在初始实现中严重失败，加入逐步 $`x_0`$ clipping 和采样诊断后却成为后续最佳路线；R5 的 raw 与 EMA、不同 EMA decay 也给出了不同结论。这些对照让我从“看单个训练指标”转向“固定协议、隔离变量、用最终采样质量验证假设”。
 
-## 十四、真实调试记录
+## 十三、真实调试记录
 
 ### 记录 1：cosine 采样端点出现 $`x_0`$ 数值爆炸
 
