@@ -12,9 +12,11 @@
 | D：LoRA 微调、分段保存、独立加载 | 完成 800 optimizer steps | outputs/lora/full/、outputs/lora/full_eval/ |
 | E：Canny ControlNet 与 attention challenge | 四种风格、结构/文本冲突、四个 token attention map | outputs/controlnet/、outputs/attention/full/ |
 | LDM §3–4 与 SDXL 阅读笔记 | 已完成 | notes/reading_note_ldm.md、reading_notes/ldm_sdxl_reading_note.md |
-| 环境、复现与 debug | 环境快照、运行日志和真实问题记录 | outputs/autodl_environment.json、logs/、本报告第 10 节 |
+| 环境、复现与 debug | 环境快照、运行日志和真实问题记录 | outputs/autodl_environment.json、logs/、本报告第九节 |
 
-## 二. Stable Diffusion 结构
+## 二. 任务A：Stable Diffusion 推理框架实现
+
+### Stable Diffusion 结构
 
 文本到图像的主要张量流：
 
@@ -32,32 +34,21 @@
 | 去噪 latent | (1, 4, 64, 64) | UNet 预测与 scheduler 更新后的 latent |
 | 解码 RGB | (1, 3, 512, 512) | 解码前按 VAE scaling factor 0.18215 还原 latent 尺度 |
 
-## 三. 任务A：Stable Diffusion 推理框架实现
-
 文件：01_inference_walkthrough.ipynb，该 notebook 逐步运行 tokenizer、CLIP、噪声初始化、DDIM、CFG、scheduler 更新和 VAE decode。
 
 固定配置：prompt 为 **astronaut/horse/mars** 场景，negative prompt 为 **low quality, blurry, distorted**，seed=42，50 个 DDIM steps，CFG=7.5。
-
-### 采样过程中的 latent 统计
-
-| 循环 step | scheduler timestep | mean | std | min | max |
-|---:|---:|---:|---:|---:|---:|
-| 0 | 981 | 0.00173 | 0.99620 | -3.92188 | 3.92578 |
-| 9 | 801 | -0.00029 | 0.98591 | -3.81445 | 3.77148 |
-| 24 | 501 | -0.00298 | 0.94525 | -3.60352 | 3.93555 |
-| 49 | 1 | -0.00781 | 0.80868 | -4.90625 | 5.94922 |
-
-**分析结论：** 生成图能同时呈现 astronaut、horse 与 Mars，说明 tokenizer、文本编码、CFG、UNet/scheduler 更新到 VAE 解码的手写链路已贯通。采样记录中 latent 均值始终接近 0，标准差从 `0.9962` 降至 `0.8087`；这描述的是 scheduler 更新后 latent 的数值变化，不是“剩余噪声比例”或图像质量分数，不能单独据此判断去噪质量。
 
 产物：[手写推理生成图](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_seed42.png)、[latent 统计 JSON](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_stats.json)。
 
 <p align="center"><img src="https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/manual/manual_sd_seed42.png" alt="手写 Stable Diffusion 推理结果" width="960"></p>
 <p align="center"><strong>图 1｜手写推理生成结果</strong><br><sub>seed=42、50 DDIM steps、CFG=7.5</sub></p>
 
+**分析结论：** 生成图能同时呈现 astronaut、horse 与 Mars，说明 tokenizer、文本编码、CFG、UNet/scheduler 到 VAE 解码的链路已贯通。
+
 ### Reading Notes：LDM和SDXL
 链接：[reading_note_ldm.md](https://github.com/li-cheng111/my-diffusion-models-starter/blob/main/projects/project3_stable_diffusion/notes/reading_note_ldm.md)
 
-## 四. 任务B：CFG、steps 与 sampler 扫描
+## 三. 任务B：CFG、steps 与 sampler 扫描
 
 脚本：02_parameter_sweep.py。full preset 在同一 prompt、negative prompt 和 seed=42 下改变一个因素或绘制二维交互图。prompt 为 **“a photograph of a cat wearing a wizard hat, fantasy art”**，negative prompt 为 **“low quality, blurry”**；输出尺寸 512×512。
 
@@ -86,16 +77,14 @@
 
 **分析结论：**
 
-- **CFG 控制条件遵循强度，不是质量旋钮。** CFG=1 时 prompt 特征较弱；3–7.5 时猫与巫师帽更易辨认；15–25 虽然颜色和局部对比更强，但开始过饱和、眼部等细节变形。本组图的平衡点约在 7.5，不能据单一 prompt 推成通用最优值。
-- **步数增加有明显的边际递减。** 10 步的轮廓较软，20 步主要结构已成形；50 步后细节趋稳，100 步相较 50 步的可见收益有限。对这组设置，50 步是质量与计算量较合适的折中。
-- **Sampler 改的是去噪轨迹，而非简单“锐化滤镜”。** DDIM 与 DPM++ 2M 保留了相近的猫/巫师帽主题；Euler-A 的构图、光照和背景变化更大。同 seed 不代表不同 solver 会逐像素相同，也不能据这一个样本判定哪种 sampler 普遍更优。
-- **CFG 与步数不能互相替代。** 二维网格中，增大 CFG 能强化语义和色彩，却不能弥补低步数下尚未充分细化的结构；因此应先保证足够的采样步数，再按 prompt 调 CFG。
-
-以上均为固定 seed、单 prompt 的视觉观察，没有盲评或质量指标，结论限于本次样例。
+- **CFG 控制条件存在适中点：** CFG=1 时 prompt 特征较弱；3–7.5 时猫与巫师帽更易辨认；15–25 虽然颜色和局部对比更强，但开始过饱和、眼部等细节变形。本组图的平衡点约在 7.5。
+- **步数增加的效果有明显的边际递减：** 10 步的轮廓较软，20 步主要结构已成形，50 步后细节趋稳，100 步相较 50 步的可见收益有限。对这组设置，50 步是质量与计算量较合适的折中。
+- **Sampler 改变去噪轨迹，带来不同的效果。** DDIM 与 DPM++ 2M 保留了相近的猫/巫师帽主题，Euler-A 的构图、光照和背景变化更大。
+- **CFG 与步数不能互相替代：** 二维网格中，增大 CFG 能强化语义和色彩，却不能弥补低步数下尚未充分细化的结构，应先保证足够的采样步数，再按 prompt 调 CFG。
 
 高清图像链接：[sweep_cfg.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_cfg.png) · [sweep_steps.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_steps.png) · [sweep_sampler.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/sweep_sampler.png) · [grid_2d.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/sweep/grid_2d.png)
 
-## 五. 任务C：VAE anatomy
+## 四. 任务C：VAE anatomy
 
 文件：05_vae_anatomy.ipynb。使用 encoder posterior 的 mode，记录四个 latent channel、原图/重构图、局部细节 crop 和 metrics JSON。
 
@@ -126,9 +115,9 @@
 
 原始图链接：[vae_channels.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_channels.png) · [vae_reconstruction.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_reconstruction.png) · [vae_detail_crop.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/vae_detail_crop.png) · [vae_statistics.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/report/vae_statistics.png)
 
-**分析结论：** 本次 `vae_metrics.json` 记录的输入是 `outputs/sweep_smoke/grid_2d.png`，即带有小图和文字标签的参数扫描拼图，不是自然图像基准。MSE=`0.001979`、PSNR=`27.04 dB` 只衡量这张输入与重构图的像素差异；图中大块明暗与主体轮廓基本保留，但细边缘、网格分隔和小字更容易变软。四个 latent 通道的标准差为 `0.598–1.361`，显示它们是统计特性不同的学习表征，而不是 RGB 的一一对应通道。该单图结果可说明压缩/重构现象，不能推广成 VAE 对自然图像的总体保真度结论。
+**分析结论：** MSE=`0.001979`、PSNR=`27.04 dB` 衡量输入与重构图的像素差异。四个 latent 通道的标准差为 `0.598–1.361`，它们是统计特性不同的学习表征，而不是 RGB 的对应通道。由图像结果可直观看到压缩/重构现象。
 
-## 六. 任务D：LoRA 风格微调与独立加载
+## 五. 任务D：LoRA 风格微调与独立加载
 
 文件：03_lora_finetune.py、evaluate_lora.py。
 
@@ -149,9 +138,9 @@ evaluate_lora.py 在独立 SD pipeline 中评估 base、checkpoint-0200、0400�
 
 原始图：[lora_before_after.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/lora/full_eval/lora_before_after.png)
 
-**分析结论：** 首个记录 loss 为 `0.2810`、末步为 `0.1527`，但最后 50 步均值是 `0.2282`；batch=1 下单步 loss 波动明显，因此只能说末步低于首步，不能声称全程单调收敛。对照图中，200 步已能看到更明显的笔触和色彩风格变化，之后变化较渐进；部分画面也出现类似伪字/签名的细节，说明风格增强不等于所有内容质量持续提高。另一个关键限制是训练 prompt 为 `a painting in the style of van gogh`，评估 prompt 却使用 `in sks style`：本实验验证了 adapter 可脱离训练进程加载并改变输出，但不能据此说 `sks` 是学到的触发词，或严格量化风格泛化能力。
+**分析结论：** 对照图中，200 步已能看到更明显的笔触和色彩风格变化，之后变化渐进，验验证了 adapter 可脱离训练进程加载并改变输出。
 
-## 七. 任务E：Canny ControlNet 与 cross-attention
+## 六. 任务E：Canny ControlNet 与 cross-attention
 
 ### 1） Canny ControlNet
 
@@ -175,7 +164,7 @@ evaluate_lora.py 在独立 SD pipeline 中评估 base、checkpoint-0200、0400�
 
 原始图：[control_input_and_canny.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/control_input_and_canny.png) · [controlnet_grid.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/controlnet_grid.png) · [controlnet_conflict_dog_on_same_edges.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/controlnet/controlnet_conflict_dog_on_same_edges.png)
 
-**分析结论：** 四种 prompt 明显改变了画面的色调和渲染质感，同时保留了输入的主要轮廓/布局，体现了“结构条件”和“文本风格”可以分工控制。但本次输入本身是由多个小图与标签构成的复杂拼图，边缘条件并非干净的单一物体轮廓；冲突结果也没有清晰呈现金毛犬。因此它只能说明该输入和当前控制强度下，复杂边缘会强烈约束构图，不能作为“ControlNet 总会压过 prompt”的证据。后续若要比较猫/狗语义冲突，应换用轮廓清楚的单物体输入，并固定其他参数做成对对照。
+**分析结论：** 四种 prompt 明显改变了画面的色调和渲染质感，同时保留了输入的主要轮廓/布局，体现了“结构条件”和“文本风格”可以分工控制。但冲突结果没有清晰呈现金毛犬，说明该输入和当前控制强度下，复杂边缘相较于prompt会更强烈地约束构图。
 
 ### 2） Cross-attention challenge
 
@@ -197,9 +186,9 @@ evaluate_lora.py 在独立 SD pipeline 中评估 base、checkpoint-0200、0400�
 
 原始图链接：[generated.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/generated.png) · [attention_03_cat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_03_cat_w.png) · [attention_07_wizard_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_07_wizard_w.png) · [attention_08_hat_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_08_hat_w.png) · [attention_12_forest_w.png](https://raw.githubusercontent.com/li-cheng111/my-diffusion-models-starter/6b14f26cd7ea2a67d3b231a97cde80baea636ca2/projects/project3_stable_diffusion/outputs/attention/full/attention_12_forest_w.png)
 
-**分析结论：** 热图呈现了 token 的空间响应差异，但 cat、wizard、hat 的响应并不总与对应物体轮廓一一重合，且彼此有重叠、向上下文扩散的现象；forest 的响应也覆盖较大背景区域。这说明 cross-attention 提供的是 token—空间软关联，不是目标检测或像素级分割。这里的图还聚合了多个层、时间步，并只显示 16×16/32×32 分辨率，适合观察关注趋势，不宜把亮区当成精确物体边界或因果解释。
+**分析结论：** 热图呈现了 token 的空间响应差异，但 cat、wizard、hat 的响应并不总与对应物体轮廓一一重合，且彼此有重叠、向上下文扩散的现象，forest 的响应也覆盖较大背景区域，说明 cross-attention 提供的是 token—空间软关联，不是目标检测或像素级分割，这是相较于 ControlNet 的明显区别。
 
-## 八. 自查问题与回答
+## 七. 自查问题与回答
 
 ### 推理与采样
 
@@ -222,7 +211,7 @@ evaluate_lora.py 在独立 SD pipeline 中评估 base、checkpoint-0200、0400�
 11. **为什么 SD 出 512×512 而不是 1024×1024？** SD 1.5 的典型训练分辨率是 512×512，并非模型不能生成 1024。VAE 将 512 图像压到 `4×64×64` latent；改成 1024 时 latent 为 `4×128×128`，空间位置数变为 4 倍，显存和计算开销明显增加。高分辨率常采用分阶段放大或专门的高分辨率模型。
 12. **为什么 SD 画不好文字？** SD 的文本条件主要帮助 **表达场景语义**，不是逐字排版监督；训练图文数据通常也**没有精确的字符位置/字形标注**。再加上 **512 分辨率和 VAE 压缩容易损失细笔画**，模型难以稳定保证拼写、字符数量和布局，因此文字常变形或拼错。
 
-## 九. 代码、产物与 Release 索引
+## 八. 代码、产物与 Release 索引
 
 ### 实验代码与仓库内结果
 
