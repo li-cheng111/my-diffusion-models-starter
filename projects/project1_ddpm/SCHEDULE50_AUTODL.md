@@ -142,9 +142,9 @@ are a short-budget comparison and must not be conflated with the separate
 
 - Seed 42: [schedule50-seed42-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed42-v1)
 - Seed 44: [schedule50-seed44-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed44-v1)
-- Seed 43: [schedule50-seed43-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed43-v1). This Release currently contains an earlier cosine-only recovery snapshot; its description and assets still need the completed linear run, final evaluations, sample grids, and updated checksums uploaded. Do not treat its current assets as the complete seed 43 result bundle.
+- Seed 43: [schedule50-seed43-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed43-v1). The Release now contains both final checkpoints, the completed logs/configs/FID/loss/sample archive, and a completed SHA256 manifest. The legacy `final.pt` asset is the cosine checkpoint; the linear checkpoint has an explicit filename. The earlier resume bundle remains for provenance.
 
-Each completed result archive should retain the per-run configuration, environment
+Each completed result archive retains the per-run configuration, environment
 metadata, training/evaluation logs, loss history/curve, EMA FID text files, and
 sample grids. Final checkpoints remain Release attachments, not ordinary Git
 objects. CIFAR-10 data is not included.
