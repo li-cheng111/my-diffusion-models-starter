@@ -35,7 +35,7 @@ scripts/                   仓库级检查脚本
 
 大型权重、结果归档和复现材料通过 GitHub Releases 分发，历史版本仍可用于复现对应实验。
 
-| 项目 / Release | 内容与适用范围 |
+| 项目 |  Release内容 |
 |---|---|
 | **项目 1：DDPM** | `challenge-v1` 收录 R3–R7、学习率筛选及原挑战档权重与结果；`schedule50-seed42-v1`、`schedule50-seed43-v1`、`schedule50-seed44-v1` 分别保存三个训练 seed 的 50 epoch 调度对比；最新的 `schedule200-seed43-v1` 保存 seed 43 线性/余弦续训至 200 epoch 的权重、日志、评估和校验清单。<br>[challenge-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1) · [schedule50-seed42-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed42-v1) · [schedule50-seed43-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed43-v1) · [schedule50-seed44-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed44-v1) · [schedule200-seed43-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule200-seed43-v1) |
 | **项目 2：采样器对比** | `project2-v1.0` 发布采样器基准输入权重 `project2-input-ddpm-cifar10-linear-seed44.pt`，并附代码提交号与复现清单。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project2-v1.0) |
