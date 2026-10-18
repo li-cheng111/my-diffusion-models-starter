@@ -17,6 +17,8 @@ FID 改进、学习率筛选、采样诊断和复现说明。
 | 挑战 cosine，seed 43 | CIFAR-10，200 epoch | cosine beta，基础 U-Net | — / — / 129.2708 | raw 399.1676 | 失败案例 |
 | 挑战 cosine，seed 44 | CIFAR-10，200 epoch | cosine beta，基础 U-Net | — / — / 145.2832 | raw 410.0121 | 失败案例 |
 | 挑战 cosine 汇总 | 3 seeds，200 epoch | cosine beta | — / — / 137.5132 ± 8.0166 | raw 364.1998 ± 70.1675 | 初始 cosine 采样异常 |
+| Schedule50 linear 汇总 | CIFAR-10，50 epoch，3 seeds，各 19,500 attempted batches | 完整 U-Net，linear，clip $`x_0`$ | 28.9522 ± 0.2274 / 29.3787 ± 0.2046 / 189.3650 ± 72.2358 | 固定 5,000/5,000 FID 协议 | 短预算下 0.999/0.9995 高于 cosine |
+| Schedule50 cosine 汇总 | CIFAR-10，50 epoch，3 seeds，各 19,500 attempted batches | 完整 U-Net，cosine，clip $`x_0`$ | 23.9276 ± 0.3997 / 24.3862 ± 0.2908 / 152.3518 ± 8.7018 | 固定 5,000/5,000 FID 协议 | 0.999/0.9995 优于 linear；0.9999 仍很差 |
 | 改版R1 full linear default | 200 epoch，seed 44 | 完整 U-Net，linear，固定 LR | 18.9792 / 18.5210 / 18.8144 | 未裁剪 18.8045 | 完整 U-Net 基线 |
 | 改版R2 full linear cosine-LR | 200 epoch，seed 44 | 完整 U-Net，linear，LR 尾段衰减 | 20.3343 / 20.1602 / 19.4633 | 未裁剪 19.4615 | LR 尾衰减在 linear 上未改善 |
 | 改版R3 full cosine default | 200 epoch，seed 44 | 完整 U-Net，cosine，固定 LR | 15.7886 / 15.5340 / 16.1686 | raw 66.6401；未裁剪 162.8797 | 裁剪后大幅恢复，最佳 15.5340 |
@@ -131,43 +133,20 @@ schedule，并使用 seed 42、43、44：
 
 初看结果会得出“linear 明显优于 cosine”的结论，但这只适用于初始矩阵的模型和采样实现。后续发现 cosine schedule 在 **末端极小的 $`\bar{\alpha}_t`$ 下会产生巨大的 $`\hat{x}_0`$** 反推值；在完整 U-Net、明确的 clipping 和诊断加入后，cosine 可以达到约 15–16的 FID。因此 schedule 不能脱离网络、loss、采样处理和训练预算单独评价。
 
-### 5.1 补充对照：完整 U-Net、50 epoch、三个训练 seed
+### 5.1 Schedule50：完整 U-Net 的 50 epoch 复核
 
-此前缺失的 schedule50 实验现已完成。三个 seed 分别为 42、43、44；每个 seed 都独立训练 linear 与 cosine。评估固定为 CIFAR-10 train split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000 步 DDPM、torch-fidelity Inception 特征，并在每个反向步裁剪预测的 $`x_0`$。表中是跨训练 seed 的均值 ± **样本标准差**：
+为在有限时间内复核短训练阶段的 schedule 趋势，使用 seed 42、43、44 分别训练 linear 与 cosine。每组固定完整 U-Net、batch size 128、$`T=1000`$、$`\epsilon`$ prediction、AdamW 学习率 $`2\times10^{-4}`$、5,000 次成功更新 warmup、50 epoch（每组 19,500 个 batch）、EMA 0.999/0.9995/0.9999，并在每个反向步骤裁剪预测的 $`x_0`$。FID 协议固定为 CIFAR-10 train split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000 步 DDPM 和 torch-fidelity Inception 特征。每个单元按 EMA 0.999 / 0.9995 / 0.9999 排列，数值越低越好。
 
-| Schedule | EMA 0.999 | EMA 0.9995 | EMA 0.9999 |
-|---|---:|---:|---:|
-| Linear | 28.9522 ± 0.2274 | 29.3787 ± 0.2046 | 189.3650 ± 72.2358 |
-| Cosine | **23.9276 ± 0.3997** | **24.3862 ± 0.2908** | **152.3518 ± 8.7018** |
+| 训练 seed | Linear FID（0.999 / 0.9995 / 0.9999） | Cosine FID（0.999 / 0.9995 / 0.9999） |
+|---:|---:|---:|
+| 42 | 29.2144 / 29.6127 / 136.0274 | 23.4786 / 24.0694 / 159.5961 |
+| 43 | 28.8330 / 29.2898 / 160.4971 | 24.0592 / 24.4483 / 142.6996 |
+| 44 | 28.8092 / 29.2335 / 271.5706 | 24.2449 / 24.6410 / 154.7598 |
+| 均值 ± 样本标准差 | 28.9522 ± 0.2274 / 29.3787 ± 0.2046 / 189.3650 ± 72.2358 | 23.9276 ± 0.3997 / 24.3862 ± 0.2908 / 152.3518 ± 8.7018 |
 
-在 50 epoch 下，cosine 对 EMA 0.999 和 0.9995 的平均 FID 分别比 linear 低 5.0246 和 4.9925；但 EMA 0.9999 对两种 schedule 都极不稳定，且三个 linear seed 的离散程度很大。因而“50 epoch cosine 更好”只适用于这组完整 U-Net、裁剪采样和较低两档 EMA 的实验条件，不能推广到所有模型或 EMA decay。
+在 0.999 和 0.9995 两档 EMA 下，cosine 在三个 seed 上都比 linear 低约 4.6–5.7 FID，跨 seed 均值分别低 5.0246 和 4.9925，方向一致且幅度明显。预先指定的 EMA 0.9999 主指标下，两种 schedule 都出现异常高 FID；cosine 均值虽比 linear 低，但 152.3518 仍不可用。因此，这个短预算实验支持“50 epoch 时 cosine 配合较短 EMA 更好”，不支持把 0.9999 的数值当作有效生成质量结论，也不能据此推断 200 epoch 收敛结果。
 
-### 5.2 seed43 从 50 epoch 续训至 200 epoch
-
-为了控制训练成本，本组没有从头跑第二遍 200 epoch，而是分别从 seed43 的 linear、cosine 50-epoch checkpoint 按原 schedule 精确续训至 epoch 200。两种 schedule 的评估协议与 5.1 完全相同；每种 schedule 只使用一个训练 seed，因此此处是配对案例，不是跨 seed 的统计结论。
-
-| Schedule | EMA 0.999：50→200 | EMA 0.9995：50→200 | EMA 0.9999：50→200 | 200 epoch 最佳 |
-|---|---:|---:|---:|---:|
-| Linear | 28.8330 → 18.9129（−9.9201） | 29.2898 → 18.3699（−10.9199） | 160.4971 → 18.9244（−141.5727） | 18.3699（0.9995） |
-| Cosine | 24.0592 → 15.9393（−8.1199） | 24.4483 → **15.5792（−8.8691）** | 142.6996 → 16.3553（−126.3443） | **15.5792（0.9995）** |
-
-200 epoch 时 cosine 的 FID 在三档 EMA 下都低于 linear；其最佳值比 linear 低 2.7907，但仍比目标 15 高 0.5792。EMA 0.9999 从 50 epoch 时的异常高 FID 大幅回落，说明短训练阶段的高 decay EMA 尚未形成有代表性的稳定权重；不能仅凭 50 epoch 的 0.9999 结果判断最终表现。续训耗时分别为 linear 376.1 分钟、cosine 390.7 分钟（新增约 150 epoch / 58,500 个有效更新）。
-
-以下网格均由对应 200-epoch checkpoint 的 EMA 权重生成；每张网格包含 64 个样本，seed 44，1,000 步 DDPM，并逐步裁剪预测的 $`x_0`$：
-
-<p align="center">
-<img src="results/schedule200_seed43/linear/samples_ema_0999/grid.png" width="32%" alt="Linear EMA 0.999 sample grid" />
-<img src="results/schedule200_seed43/linear/samples_ema_09995/grid.png" width="32%" alt="Linear EMA 0.9995 sample grid" />
-<img src="results/schedule200_seed43/linear/samples_ema_09999/grid.png" width="32%" alt="Linear EMA 0.9999 sample grid" />
-</p>
-<p align="center"><em>图 5　seed43、Linear schedule、200 epoch：EMA 0.999 / 0.9995 / 0.9999 样本网格</em></p>
-
-<p align="center">
-<img src="results/schedule200_seed43/cosine/samples_ema_0999/grid.png" width="32%" alt="Cosine EMA 0.999 sample grid" />
-<img src="results/schedule200_seed43/cosine/samples_ema_09995/grid.png" width="32%" alt="Cosine EMA 0.9995 sample grid" />
-<img src="results/schedule200_seed43/cosine/samples_ema_09999/grid.png" width="32%" alt="Cosine EMA 0.9999 sample grid" />
-</p>
-<p align="center"><em>图 6　seed43、Cosine schedule、200 epoch：EMA 0.999 / 0.9995 / 0.9999 样本网格</em></p>
+EMA 0.9999 的巨大退化与过长时间平均造成的滞后相符：其权重衰减时间尺度约为 $`1/(1-0.9999)=10,000`$ 次更新，50 epoch 仅有 19,500 次 batch 更新；但这只是机制假设，需用 EMA 权重轨迹或更多训练预算进一步验证，不能视为已证明的唯一原因。完整逐 seed 表、配置说明和 Release 复现入口见 [Schedule50 实验记录](SCHEDULE50_AUTODL.md)。
 
 ## 六、改进实验
 
@@ -363,6 +342,7 @@ seed46 = 15.2086
 - results/fid15_stage1/：稳定性、real-vs-real、真实子集和 timestep 诊断数据；
 - results/fid15_r7_v_prediction/：R7；
 - results/lr_screen_30ep/、results/lr_screen_50ep/：学习率筛选；
+- [SCHEDULE50_AUTODL.md](SCHEDULE50_AUTODL.md)：50 epoch linear/cosine 三 seed 对照的配置、结果和复现材料入口；
 - results/fid15_lr5e5_full/、results/lr25_200ep/：两组完整学习率复核；
 - results/schedule200_seed43/：两种 schedule 的 50→200 epoch 续训配置、FID 指标、评估/采样日志、六张样本网格、环境与 checkpoint 校验和；
 - 各结果目录中的 .txt、.csv、.png、.yaml 保留原始数值、曲线、样本网格和实际配置。

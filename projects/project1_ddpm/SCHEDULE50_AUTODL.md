@@ -1,5 +1,9 @@
 # CIFAR-10 50-epoch linear/cosine comparison
 
+**Status: complete.** All six jobs (linear and cosine at training seeds 42, 43,
+and 44) completed 50 epochs and their three EMA evaluations under the fixed
+protocol below. Final metrics are recorded near the end of this document.
+
 This run compares linear and cosine diffusion schedules with the same full
 U-Net, optimizer settings, 50-epoch budget, EMA bank, and FID protocol. The six
 jobs are paired by training seed:
@@ -113,3 +117,34 @@ per-seed paired difference `cosine - linear`. Treat EMA 0.9999 as the primary
 comparison. A 50-epoch result describes this short-training regime; it does not
 replace the existing 200-epoch comparison or establish which schedule is best
 after full convergence.
+
+## Completed results
+
+Each entry lists FID for EMA 0.999 / 0.9995 / 0.9999. The reported summary is
+the mean and sample standard deviation across the three *training* seeds.
+
+| Training seed | Linear | Cosine |
+|---:|---:|---:|
+| 42 | 29.2144 / 29.6127 / 136.0274 | 23.4786 / 24.0694 / 159.5961 |
+| 43 | 28.8330 / 29.2898 / 160.4971 | 24.0592 / 24.4483 / 142.6996 |
+| 44 | 28.8092 / 29.2335 / 271.5706 | 24.2449 / 24.6410 / 154.7598 |
+| Mean ± sample SD | 28.9522 ± 0.2274 / 29.3787 ± 0.2046 / 189.3650 ± 72.2358 | 23.9276 ± 0.3997 / 24.3862 ± 0.2908 / 152.3518 ± 8.7018 |
+
+Cosine beat linear on every seed for EMA 0.999 and 0.9995, by 4.56–5.74 FID
+and 4.59–5.54 FID respectively. EMA 0.9999 was severely degraded for both
+schedules. Its approximately 10,000-update averaging time scale is long relative
+to this 19,500-batch budget, making excessive lag a plausible explanation, but
+the experiment does not isolate or prove that mechanism. These 50-epoch results
+are a short-budget comparison and must not be conflated with the separate
+200-epoch experiments.
+
+## Release artifacts
+
+- Seed 42: [schedule50-seed42-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed42-v1)
+- Seed 44: [schedule50-seed44-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed44-v1)
+- Seed 43: [schedule50-seed43-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed43-v1). The Release now contains both final checkpoints, the completed logs/configs/FID/loss/sample archive, and a completed SHA256 manifest. The legacy `final.pt` asset is the cosine checkpoint; the linear checkpoint has an explicit filename. The earlier resume bundle remains for provenance.
+
+Each completed result archive retains the per-run configuration, environment
+metadata, training/evaluation logs, loss history/curve, EMA FID text files, and
+sample grids. Final checkpoints remain Release attachments, not ordinary Git
+objects. CIFAR-10 data is not included.
