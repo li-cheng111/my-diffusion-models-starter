@@ -9,16 +9,10 @@ FID 改进、学习率筛选、采样诊断和复现说明。
 |---|---|---|---:|---:|---|
 | MNIST 基础档 | MNIST，50 epoch，23,400 steps | linear beta，$`\epsilon`$ prediction | — | FID 32.8913；末次 loss 0.01151；24.8 min | 基础实现、训练、采样完成 |
 | CIFAR-10 进阶基线 | CIFAR-10，200 epoch，78,000 steps | linear beta，$`\epsilon`$ MSE，EMA | — / — / 19.2879 | raw 28.7464；98.2 min | 进阶档完成，未达 $`\mathrm{FID}\le 15`$ |
-| 旧版挑战 linear，seed 42 | CIFAR-10，200 epoch | 旧版基础 U-Net；未逐步裁剪 $`x_0`$ | — / — / 19.2879 | raw 28.7464 | 历史结果；与后续完整 U-Net 对照不可直接比较 |
-| 旧版挑战 linear，seed 43 | CIFAR-10，200 epoch | 旧版基础 U-Net；未逐步裁剪 $`x_0`$ | — / — / 19.6306 | raw 42.7537 | 历史结果；与后续完整 U-Net 对照不可直接比较 |
-| 旧版挑战 linear，seed 44 | CIFAR-10，200 epoch | 旧版基础 U-Net；未逐步裁剪 $`x_0`$ | — / — / 18.9593 | raw 34.9399 | 历史结果；与后续完整 U-Net 对照不可直接比较 |
-| 旧版挑战 linear 汇总 | 3 seeds，200 epoch | 旧版基础 U-Net | — / — / 19.2926 ± 0.3357 | raw 35.4800 ± 7.0193 | 仅作历史记录，不作为 schedule 结论 |
-| 旧版挑战 cosine，seed 42 | CIFAR-10，200 epoch | 旧版基础 U-Net；未逐步裁剪 $`x_0`$ | — / — / 137.9856 | raw 283.4196 | 旧版采样异常，不能据此判断 cosine 本身 |
-| 旧版挑战 cosine，seed 43 | CIFAR-10，200 epoch | 旧版基础 U-Net；未逐步裁剪 $`x_0`$ | — / — / 129.2708 | raw 399.1676 | 旧版采样异常，不能据此判断 cosine 本身 |
-| 旧版挑战 cosine，seed 44 | CIFAR-10，200 epoch | 旧版基础 U-Net；未逐步裁剪 $`x_0`$ | — / — / 145.2832 | raw 410.0121 | 旧版采样异常，不能据此判断 cosine 本身 |
-| 旧版挑战 cosine 汇总 | 3 seeds，200 epoch | 旧版基础 U-Net | — / — / 137.5132 ± 8.0166 | raw 364.1998 ± 70.1675 | 仅记录旧版 pipeline 的失真现象，不与新结果合并 |
 | Schedule50 linear 汇总 | CIFAR-10，50 epoch，3 seeds，各 19,500 attempted batches | 完整 U-Net，linear，clip $`x_0`$ | 28.9522 ± 0.2274 / 29.3787 ± 0.2046 / 189.3650 ± 72.2358 | 固定 5,000/5,000 FID 协议 | 短预算下 0.999/0.9995 高于 cosine |
 | Schedule50 cosine 汇总 | CIFAR-10，50 epoch，3 seeds，各 19,500 attempted batches | 完整 U-Net，cosine，clip $`x_0`$ | 23.9276 ± 0.3997 / 24.3862 ± 0.2908 / 152.3518 ± 8.7018 | 固定 5,000/5,000 FID 协议 | 0.999/0.9995 优于 linear；0.9999 仍很差 |
+| seed43 续训 linear | CIFAR-10，50→200 epoch | 完整 U-Net，linear，新增约 58,500 steps | 18.9129 / 18.3699 / 18.9244 | 续训 376.1 min；最佳 EMA 0.9995 |
+| seed43 续训 cosine | CIFAR-10，50→200 epoch | 完整 U-Net，cosine，新增约 58,500 steps | 15.9393 / 15.5792 / 16.3553 | 续训 390.7 min；最佳 EMA 0.9995 |
 | 改版R1 full linear default | 200 epoch，seed 44 | 完整 U-Net，linear，固定 LR | 18.9792 / 18.5210 / 18.8144 | 未裁剪 18.8045 | 完整 U-Net 基线 |
 | 改版R2 full linear cosine-LR | 200 epoch，seed 44 | 完整 U-Net，linear，LR 尾段衰减 | 20.3343 / 20.1602 / 19.4633 | 未裁剪 19.4615 | LR 尾衰减在 linear 上未改善 |
 | 改版R3 full cosine default | 200 epoch，seed 44 | 完整 U-Net，cosine，固定 LR | 15.7886 / 15.5340 / 16.1686 | raw 66.6401；未裁剪 162.8797 | 裁剪后大幅恢复，最佳 15.5340 |
@@ -28,8 +22,6 @@ FID 改进、学习率筛选、采样诊断和复现说明。
 | 改版R7 v-prediction | 200 epoch，seed 44 | R5 设置，$`\epsilon\to v`$ target | 19.0443 / 18.8484 / 17.4808 | raw 19.2896 | 单独切换 v-prediction 无效 |
 | 调整学习率LR=5e-5 | 200 epoch，seed 44 | cosine，peak 5e-5，late decay | 17.4472 / 17.3407 / 16.5231 | raw 18.6642 | 30 epoch 最优候选未延续 |
 | 调整学习率LR=2.5e-4 | 50 → 200 epoch，seed 44 | cosine，peak 2.5e-4，late decay | 16.0761 / 15.8897 / 15.6761 | raw 16.8996 | 不如 R5 的 0.9999 |
-| seed43 续训 linear | CIFAR-10，50→200 epoch | 完整 U-Net，linear，新增约 58,500 steps | 18.9129 / 18.3699 / 18.9244 | 续训 376.1 min；最佳 EMA 0.9995 |
-| seed43 续训 cosine | CIFAR-10，50→200 epoch | 完整 U-Net，cosine，新增约 58,500 steps | 15.9393 / 15.5792 / 16.3553 | 续训 390.7 min；最佳 EMA 0.9995 |
 | **R5 seed 测试** | 同一 R5 checkpoint | seed 44/45/46，5,000/5,000 | EMA 0.9999条件下，各seed对应**15.4385 / 15.4678 / 15.2086** | 均值 15.3717 | **R5在以上测试中效果最佳，FID最可能接近15** |
 
 当前全项目的最佳固定协议值仍为 seed=46 下的 **R5 EMA 0.9999 = 15.2086**。本次 seed43 续训对照中，cosine 最佳为 15.5792，尚未达到 FID ≤ 15。
@@ -119,20 +111,10 @@ raw 与 EMA 权重。最终 loss 为 0.01938，训练约 98.2 分钟：
 
 ## 五、挑战档：linear 与 cosine
 
-当前可作正式 schedule 对照的最新 200-epoch 结果，是 seed43 的 schedule-specific 续训：分别从各自的 50-epoch 完整 U-Net checkpoint 继续到 200 epoch（总计 78,000 steps，新增约 58,500 steps）。两组都使用 CIFAR-10、相同训练 seed、同一套评估协议和每个反向步骤的 $`x_0`$ clipping。FID 固定为 train split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000 步 DDPM 与 torch-fidelity Inception 特征。评估使用 EMA；本轮没有评估 raw 权重，因此不填造 raw FID。由于 200-epoch 续训只有一个训练 seed，不计算或暗示跨 seed 均值与标准差。
+### 1）Schedule50：50 epoch 
 
-| Schedule | 训练 seed / 预算 | EMA 0.999 | EMA 0.9995 | EMA 0.9999 | Raw |
-|---|---|---:|---:|---:|---:|
-| linear | 43，50→200 epoch | 18.9129 | **18.3699** | 18.9244 | 未评估 |
-| cosine | 43，50→200 epoch | 15.9393 | **15.5792** | 16.3553 | 未评估 |
-
-在这个配对续训中，cosine 的 FID 在三档 EMA 下都低于 linear，分别改善 2.9736、2.7907 和 2.5691；两种 schedule 的最佳 EMA 都是 0.9995。cosine 的最佳值 15.5792 仍比 FID≤15 的目标高 0.5792，也比项目此前最佳 R5 seed46 的 15.2086 高 0.3706。因此结果支持“在本模型、配置和 seed43 训练轨迹下，cosine 优于 linear”，但单 seed 结果不足以证明对所有随机种子都成立。
-
-旧版挑战矩阵曾报告 linear 约 19 FID、cosine 约 130–145 FID，且 raw cosine 更高；它使用旧版基础 U-Net 和未逐步裁剪预测 $`x_0`$ 的采样路径，不能与这次完整 U-Net、裁剪采样的结果视为同条件实验。那些数值适合保留为实现问题的历史记录，不适合用来声称 linear schedule 本质上优于 cosine。Schedule50 三 seed 的独立短预算结果见下节，不能与本次单 seed 200-epoch 续训混成一个均值。
-
-### 5.1 Schedule50：完整 U-Net 的 50 epoch 复核
-
-为在有限时间内复核短训练阶段的 schedule 趋势，使用 seed 42、43、44 分别训练 linear 与 cosine。每组固定完整 U-Net、batch size 128、$`T=1000`$、$`\epsilon`$ prediction、AdamW 学习率 $`2\times10^{-4}`$、5,000 次成功更新 warmup、50 epoch（每组 19,500 个 batch）、EMA 0.999/0.9995/0.9999，并在每个反向步骤裁剪预测的 $`x_0`$。FID 协议固定为 CIFAR-10 train split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000 步 DDPM 和 torch-fidelity Inception 特征。每个单元按 EMA 0.999 / 0.9995 / 0.9999 排列，数值越低越好。
+使用 seed 42、43、44 分别训练 linear 与 cosine，每组固定完整 U-Net、batch size 128、$`T=1000`$、$`\epsilon`$ prediction、AdamW 学习率 $`2\times10^{-4}`$、5,000 次成功更新 warmup、50 epoch（每组 19,500 个 batch）、EMA 0.999/0.9995/0.9999，并在每个反向步骤裁剪预测的 $`x_0`$。
+FID 固定为 CIFAR-10 train split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000 步 DDPM 和 torch-fidelity Inception 特征。每个单元按 EMA 0.999 / 0.9995 / 0.9999 排列，数值越低越好。
 
 | 训练 seed | Linear FID（0.999 / 0.9995 / 0.9999） | Cosine FID（0.999 / 0.9995 / 0.9999） |
 |---:|---:|---:|
@@ -141,13 +123,20 @@ raw 与 EMA 权重。最终 loss 为 0.01938，训练约 98.2 分钟：
 | 44 | 28.8092 / 29.2335 / 271.5706 | 24.2449 / 24.6410 / 154.7598 |
 | 均值 ± 样本标准差 | 28.9522 ± 0.2274 / 29.3787 ± 0.2046 / 189.3650 ± 72.2358 | 23.9276 ± 0.3997 / 24.3862 ± 0.2908 / 152.3518 ± 8.7018 |
 
-在 0.999 和 0.9995 两档 EMA 下，cosine 在三个 seed 上都比 linear 低约 4.6–5.7 FID，跨 seed 均值分别低 5.0246 和 4.9925，方向一致且幅度明显。预先指定的 EMA 0.9999 主指标下，两种 schedule 都出现异常高 FID；cosine 均值虽比 linear 低，但 152.3518 仍不可用。因此，这个短预算实验支持“50 epoch 时 cosine 配合较短 EMA 更好”，不支持把 0.9999 的数值当作有效生成质量结论，也不能据此推断 200 epoch 收敛结果。
+在 0.999 和 0.9995 两档 EMA 下，cosine 在三个 seed 上都比 linear 低约 4.6–5.7 FID，跨 seed 均值分别低 5.0246 和 4.9925，方向一致且幅度明显，说明**50 epoch 时 cosine**效果会更好一点。但是在 EMA 0.9999 主指标下，两种 schedule 都出现异常高 FID，最可能的原因是 **EMA 平均周期过长**，当前实验从随机初始化开始使用固定 decay，经过约 19,500 次更新后，初始化参数仍保留约 14.23% 的权重，初始化与前 5,000 步 warmup 阶段合计约占 23.46%，使 EMA 模型明显滞后于已经训练好的模型，这种去噪偏差经过 1,000 步采样累积，可能导致生成质量严重下降。
 
-EMA 0.9999 的巨大退化与过长时间平均造成的滞后相符：其权重衰减时间尺度约为 $`1/(1-0.9999)=10,000`$ 次更新，50 epoch 仅有 19,500 次 batch 更新；但这只是机制假设，需用 EMA 权重轨迹或更多训练预算进一步验证，不能视为已证明的唯一原因。完整逐 seed 表、配置说明和 Release 复现入口见 [Schedule50 实验记录](SCHEDULE50_AUTODL.md)。
+### 2）Schedule200：200 epoch
 
-### 5.2 Schedule200：seed43 配对续训
+在50epoch基础上进行续训，linear 与 cosine 两组仍都使用 CIFAR-10、相同训练 seed、同一套评估协议和每个反向步骤的 $`x_0`$ clipping。FID 固定为 train split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000 步 DDPM 与 torch-fidelity Inception 特征。
 
-Schedule50 中 seed43 的 EMA 0.999 / 0.9995 / 0.9999 FID，linear 为 28.8330 / 29.2898 / 160.4971，cosine 为 24.0592 / 24.4483 / 142.6996。续训到 200 epoch 后，对应值分别降至 18.9129 / 18.3699 / 18.9244 与 15.9393 / 15.5792 / 16.3553。也就是说，异常高的 EMA 0.9999 FID 并非 200 epoch 结果的固有特征；在这一条训练轨迹上，增加训练预算后它显著恢复，但仍不是最优 decay。这个前后比较是同一 seed 的 checkpoint 延续，能够说明该轨迹随训练预算的变化，不能代替多个独立训练 seed 的统计。
+| Schedule | 训练 seed / 预算 | EMA 0.999 | EMA 0.9995 | EMA 0.9999 | Raw |
+|---|---|---:|---:|---:|---:|
+| linear | 43，50→200 epoch | 18.9129 | **18.3699** | 18.9244 | 未评估 |
+| cosine | 43，50→200 epoch | 15.9393 | **15.5792** | 16.3553 | 未评估 |
+
+续训到 200 epoch 后，FID 对应值分别降至 18.9129 / 18.3699 / 18.9244 与 15.9393 / 15.5792 / 16.3553。可以看到**异常高的 EMA 0.9999 FID 在增加训练预算后显著恢复**，说明50 epoch下 EMA 平均周期过长可能就是主要的影响因素。
+
+在这个配对续训中，cosine 的 FID 在三档 EMA 下都低于 linear，分别改善 2.9736、2.7907 和 2.5691；两种 schedule 的最佳 EMA 都是 0.9995，说明在本实验条件下，**可以确定 cosine 效果优于 linear**。
 
 ## 六、改进实验
 
