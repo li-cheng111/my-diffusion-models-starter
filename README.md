@@ -6,11 +6,11 @@
 
 | 项目 | 内容与当前结果 |
 |---|---|
-| [项目 1：DDPM](projects/project1_ddpm/README.md) | 基础、进阶、挑战及改进实验均有实现和记录。固定正式协议下当前最佳为 R5 EMA 0.9999，FID **15.4385** |
-| [项目 2：采样器对比](projects/project2_samplers/README.md) | DDIM、Euler、二阶 DPM-Solver、DDIM 反演及 FID–NFE 对比均有实现和记录；复用项目 1 的模型。 |
-| [项目 3：Stable Diffusion](projects/project3_stable_diffusion/README.md) | 手写推理、参数扫描、VAE、LoRA、ControlNet 和 cross-attention 可视化均有实现和记录；LoRA 权重已发布。 |
-| [项目 4：Flow Matching](projects/project4_flow_matching/README.md) | loss、Euler/Heun 采样和 CFG 已用于训练与评估；无条件和条件 DiT-S 均完成 200,000 步训练，v2 结果与推理权重已归档。 |
-| [项目 5：VLA Action Diffusion](projects/project5_vla_action_diffusion/README.md) | DDPM、Flow Matching、BC、视觉编码和闭环评估均有实现，覆盖 10 个配置，每个训练 10,000 步并评估 100 回合。报告中的最高成功率为 **91%**（DDPM，H=8，未屏蔽 padding）。 |
+| [项目 1：DDPM](projects/project1_ddpm/README.md) | 基础、进阶、挑战、改进、学习率筛选和采样诊断均有记录。R5 EMA 0.9999 在 seed 44/45/46 测试中的 FID 为 15.4385 / 15.4678 / **15.2086**（均值 15.3717）；当前最低值仍未达到 FID ≤ 15。另完成 seed 43 从 50 续训至 200 epoch，cosine 最佳 FID 为 15.5792。 |
+| [项目 2：采样器对比](projects/project2_samplers/README.md) | DDPM、DDIM、Euler、二阶 DPM-Solver、DDIM 反演及 FID–NFE 对比均有实现和记录；复用项目 1 的模型。基线 DPM-Solver-2 在 19 NFE 下 FID 为 21.074；R5 权重的 250 NFE DDIM FID 为 18.362。 |
+| [项目 3：Stable Diffusion](projects/project3_stable_diffusion/README.md) | SD 1.5 手写推理、CFG/步数/sampler 扫描、VAE 解剖、LoRA、Canny ControlNet 和 cross-attention 可视化均已完成；LoRA 训练 800 步，adapter 已发布。 |
+| [项目 4：Flow Matching](projects/project4_flow_matching/README.md) | 包含 U-Net 与 DiT-S 的 Flow Matching、Euler/Heun、CFG、Reflow 和时间采样对照。v2 条件与无条件 DiT-S 均以 seed 42 训练 200,000 步，EMA 0.9999 权重和评估归档已发布；条件模型 20 步 Euler、CFG=2 的 FID 为 18.8105（单 seed）。 |
+| [项目 5：VLA Action Diffusion](projects/project5_vla_action_diffusion/README.md) | 比较 BC、DDPM、Flow Matching、动作块长度、padding mask、视觉编码和环境泛化。seed 42 的 10 配置矩阵每项训练 10,000 步、评估 100 回合，最高成功率为 **91%**（DDPM，H=8，未屏蔽 padding）；新增同观测双目标实验，2,000 回合成功率 81.40%。 |
 
 
 ## 目录与数据约定
@@ -33,16 +33,15 @@ scripts/                   仓库级检查脚本
 
 ## 复现权重与下载
 
-大型权重和复现材料通过 GitHub Releases 分发，历史版本仍可用于复现对应实验。
+大型权重、结果归档和复现材料通过 GitHub Releases 分发，历史版本仍可用于复现对应实验。
 
 | 项目 / Release | 内容与适用范围 |
 |---|---|
-| **1 · `challenge-v1`** ·  | 共 20 个资源：CIFAR-10 线性/余弦调度、seed 42/43/44 的 6 个基线权重，以及 R3–R7、学习率筛选和正式训练权重；另含 MNIST 部分权重、中间采样、R4 结果、R5/R6 结果与网格归档。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1) |
-| **2 · `project2-v1.0`** ·| 采样器基准输入权重 `project2-input-ddpm-cifar10-linear-seed44.pt`（459,538,769 B），并附代码提交号与复现清单。复用 Project 1 的 seed 44 线性调度 checkpoint。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project2-v1.0) |
-| **3 · `project3-v1.0`** ·  | 梵高风格 LoRA adapter `project3-lora-vangogh-full.safetensors`（6,414,448 B），并附代码提交号与复现清单。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project3-v1.0) |
-| **4 · `project4-v1.0`** ·  | 早期 DiT-S Flow Matching 复现权重 `project4-fm-dit-s-step200000.pt`（522,163,965 B），训练 200,000 步；附代码提交号与复现清单，**仅做记录，当前结果使用 v2**。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v1.0) |
-| **5 · `project4-v2.0`** ·  | 条件与无条件 DiT-S 各训练 200,000 步（seed 42、EMA 0.9999），包含 `project4-v2-{conditional,unconditional}-step200000.pt` 和 `project4_v2_results_only.tar.gz`。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v2.0) |
-| **6 · `project5-bonus-v1.0.0`** ·  | 含 `project5-vla-action-diffusion-checkpoint-30c0685.pt`、源码包和复现归档。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-bonus-v1.0.0) |
-| **7 · `project5-fair-seed42-v1.0.0`** ·  | 同一训练 seed 42 下比较 10 个配置，每个训练 10,000 步，并在固定测试 seed 10000–10099 上评估。附件为 `project5-fair-seed42-checkpoints.tar.gz`（60 个快照）、`project5-fair-seed42-results.tar.gz`（指标、rollout 与汇总）、源码包 `project5-vla-action-diffusion-source-14a93fd.tar.gz` 。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-fair-seed42-v1.0.0) |
+| **项目 1：DDPM** | `challenge-v1` 收录 R3–R7、学习率筛选及原挑战档权重与结果；`schedule50-seed42-v1`、`schedule50-seed43-v1`、`schedule50-seed44-v1` 分别保存三个训练 seed 的 50 epoch 调度对比；最新的 `schedule200-seed43-v1` 保存 seed 43 线性/余弦续训至 200 epoch 的权重、日志、评估和校验清单。<br>[challenge-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/challenge-v1) · [schedule50-seed42-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed42-v1) · [schedule50-seed43-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed43-v1) · [schedule50-seed44-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed44-v1) · [schedule200-seed43-v1](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule200-seed43-v1) |
+| **项目 2：采样器对比** | `project2-v1.0` 发布采样器基准输入权重 `project2-input-ddpm-cifar10-linear-seed44.pt`，并附代码提交号与复现清单。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project2-v1.0) |
+| **项目 3：Stable Diffusion** | `project3-v1.0` 发布完整训练的梵高风格 LoRA adapter `project3-lora-vangogh-full.safetensors`（6,414,448 bytes），并附代码提交号、复现清单和校验信息。[Release 页面](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project3-v1.0) |
+| **项目 4：Flow Matching** | `project4-v2.0` 发布 seed 42、EMA 0.9999 的条件与无条件 DiT-S 200,000 步 checkpoint，以及结果 JSON、样图、训练 CSV 和日志；`project4-fair-v1.0` 发布 fair-v1 完整 U-Net/DiT-S 对照权重和复现包；较早的 `project4-v1.0` 保留早期 DiT-S 权重记录。<br>[project4-v2.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v2.0) · [project4-fair-v1.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-fair-v1.0) · [project4-v1.0](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project4-v1.0) |
+| **项目 5：VLA Action Diffusion** | `project5-fair-seed42-v1.0.0` 发布 10 配置矩阵的 checkpoint、结果/复评归档和源码；`project5-simultaneous-multimodal-v1.0.0` 发布同观测双目标演示与复现材料；`project5-bonus-v1.0.0` 保存早期 bonus checkpoint 和复现包。<br>[fair-seed42](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-fair-seed42-v1.0.0) · [simultaneous-multimodal](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-simultaneous-multimodal-v1.0.0) · [bonus](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/project5-bonus-v1.0.0) |
 
 各项目的训练协议、完整指标、复现步骤和限制以对应项目文档及 Release 附件中的清单为准。
+
