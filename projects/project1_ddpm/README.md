@@ -28,8 +28,6 @@ FID 改进、学习率筛选、采样诊断和复现说明。
 | 改版R7 v-prediction | 200 epoch，seed 44 | R5 设置，$`\epsilon\to v`$ target | 19.0443 / 18.8484 / 17.4808 | raw 19.2896 | 单独切换 v-prediction 无效 |
 | 调整学习率LR=5e-5 | 200 epoch，seed 44 | cosine，peak 5e-5，late decay | 17.4472 / 17.3407 / 16.5231 | raw 18.6642 | 30 epoch 最优候选未延续 |
 | 调整学习率LR=2.5e-4 | 50 → 200 epoch，seed 44 | cosine，peak 2.5e-4，late decay | 16.0761 / 15.8897 / 15.6761 | raw 16.8996 | 不如 R5 的 0.9999 |
-| Schedule50 补充 linear（3 seeds） | CIFAR-10，50 epoch | 完整 U-Net，linear，seed 42/43/44 | 28.9522±0.2274 / 29.3787±0.2046 / 189.3650±72.2358 | eval seed 44，裁剪 x0 | EMA 0.999/0.9995 均逊于 cosine；0.9999 明显不稳定 |
-| Schedule50 补充 cosine（3 seeds） | CIFAR-10，50 epoch | 完整 U-Net，cosine，seed 42/43/44 | 23.9276±0.3997 / 24.3862±0.2908 / 152.3518±8.7018 | eval seed 44，裁剪 x0 | EMA 0.999/0.9995 平均优于 linear |
 | seed43 续训 linear | CIFAR-10，50→200 epoch | 完整 U-Net，linear，新增约 58,500 steps | 18.9129 / 18.3699 / 18.9244 | 续训 376.1 min；最佳 EMA 0.9995 |
 | seed43 续训 cosine | CIFAR-10，50→200 epoch | 完整 U-Net，cosine，新增约 58,500 steps | 15.9393 / 15.5792 / 16.3553 | 续训 390.7 min；最佳 EMA 0.9995 |
 | **R5 seed 测试** | 同一 R5 checkpoint | seed 44/45/46，5,000/5,000 | EMA 0.9999条件下，各seed对应**15.4385 / 15.4678 / 15.2086** | 均值 15.3717 | **R5在以上测试中效果最佳，FID最可能接近15** |
