@@ -26,9 +26,13 @@ FID 改进、学习率筛选、采样诊断和复现说明。
 | 改版R7 v-prediction | 200 epoch，seed 44 | R5 设置，$`\epsilon\to v`$ target | 19.0443 / 18.8484 / 17.4808 | raw 19.2896 | 单独切换 v-prediction 无效 |
 | 调整学习率LR=5e-5 | 200 epoch，seed 44 | cosine，peak 5e-5，late decay | 17.4472 / 17.3407 / 16.5231 | raw 18.6642 | 30 epoch 最优候选未延续 |
 | 调整学习率LR=2.5e-4 | 50 → 200 epoch，seed 44 | cosine，peak 2.5e-4，late decay | 16.0761 / 15.8897 / 15.6761 | raw 16.8996 | 不如 R5 的 0.9999 |
+| Schedule50 补充 linear（3 seeds） | CIFAR-10，50 epoch | 完整 U-Net，linear，seed 42/43/44 | 28.9522±0.2274 / 29.3787±0.2046 / 189.3650±72.2358 | eval seed 44，裁剪 x0 | EMA 0.999/0.9995 均逊于 cosine；0.9999 明显不稳定 |
+| Schedule50 补充 cosine（3 seeds） | CIFAR-10，50 epoch | 完整 U-Net，cosine，seed 42/43/44 | 23.9276±0.3997 / 24.3862±0.2908 / 152.3518±8.7018 | eval seed 44，裁剪 x0 | EMA 0.999/0.9995 平均优于 linear |
+| seed43 续训 linear | CIFAR-10，50→200 epoch | 完整 U-Net，linear，新增约 58,500 steps | 18.9129 / 18.3699 / 18.9244 | 续训 376.1 min；最佳 EMA 0.9995 |
+| seed43 续训 cosine | CIFAR-10，50→200 epoch | 完整 U-Net，cosine，新增约 58,500 steps | 15.9393 / 15.5792 / 16.3553 | 续训 390.7 min；最佳 EMA 0.9995 |
 | **R5 seed 测试** | 同一 R5 checkpoint | seed 44/45/46，5,000/5,000 | EMA 0.9999条件下，各seed对应**15.4385 / 15.4678 / 15.2086** | 均值 15.3717 | **R5在以上测试中效果最佳，FID最可能接近15** |
 
-当前实现的最佳值为seed=46下的 **R5 EMA 0.9999 = 15.2086**。
+当前全项目的最佳固定协议值仍为 seed=46 下的 **R5 EMA 0.9999 = 15.2086**。本次 seed43 续训对照中，cosine 最佳为 15.5792，尚未达到 FID ≤ 15。
 
 ## 二、实现内容
 
@@ -126,6 +130,44 @@ schedule，并使用 seed 42、43、44：
 | cosine raw | 283.4196 | 399.1676 | 410.0121 | 364.1998 ± 70.1675 |
 
 初看结果会得出“linear 明显优于 cosine”的结论，但这只适用于初始矩阵的模型和采样实现。后续发现 cosine schedule 在 **末端极小的 $`\bar{\alpha}_t`$ 下会产生巨大的 $`\hat{x}_0`$** 反推值；在完整 U-Net、明确的 clipping 和诊断加入后，cosine 可以达到约 15–16的 FID。因此 schedule 不能脱离网络、loss、采样处理和训练预算单独评价。
+
+### 5.1 补充对照：完整 U-Net、50 epoch、三个训练 seed
+
+此前缺失的 schedule50 实验现已完成。三个 seed 分别为 42、43、44；每个 seed 都独立训练 linear 与 cosine。评估固定为 CIFAR-10 train split 前 5,000 张真实图、5,000 张生成图、生成 seed 44、batch size 64、1,000 步 DDPM、torch-fidelity Inception 特征，并在每个反向步裁剪预测的 $`x_0`$。表中是跨训练 seed 的均值 ± **样本标准差**：
+
+| Schedule | EMA 0.999 | EMA 0.9995 | EMA 0.9999 |
+|---|---:|---:|---:|
+| Linear | 28.9522 ± 0.2274 | 29.3787 ± 0.2046 | 189.3650 ± 72.2358 |
+| Cosine | **23.9276 ± 0.3997** | **24.3862 ± 0.2908** | **152.3518 ± 8.7018** |
+
+在 50 epoch 下，cosine 对 EMA 0.999 和 0.9995 的平均 FID 分别比 linear 低 5.0246 和 4.9925；但 EMA 0.9999 对两种 schedule 都极不稳定，且三个 linear seed 的离散程度很大。因而“50 epoch cosine 更好”只适用于这组完整 U-Net、裁剪采样和较低两档 EMA 的实验条件，不能推广到所有模型或 EMA decay。
+
+### 5.2 seed43 从 50 epoch 续训至 200 epoch
+
+为了控制训练成本，本组没有从头跑第二遍 200 epoch，而是分别从 seed43 的 linear、cosine 50-epoch checkpoint 按原 schedule 精确续训至 epoch 200。两种 schedule 的评估协议与 5.1 完全相同；每种 schedule 只使用一个训练 seed，因此此处是配对案例，不是跨 seed 的统计结论。
+
+| Schedule | EMA 0.999：50→200 | EMA 0.9995：50→200 | EMA 0.9999：50→200 | 200 epoch 最佳 |
+|---|---:|---:|---:|---:|
+| Linear | 28.8330 → 18.9129（−9.9201） | 29.2898 → 18.3699（−10.9199） | 160.4971 → 18.9244（−141.5727） | 18.3699（0.9995） |
+| Cosine | 24.0592 → 15.9393（−8.1199） | 24.4483 → **15.5792（−8.8691）** | 142.6996 → 16.3553（−126.3443） | **15.5792（0.9995）** |
+
+200 epoch 时 cosine 的 FID 在三档 EMA 下都低于 linear；其最佳值比 linear 低 2.7907，但仍比目标 15 高 0.5792。EMA 0.9999 从 50 epoch 时的异常高 FID 大幅回落，说明短训练阶段的高 decay EMA 尚未形成有代表性的稳定权重；不能仅凭 50 epoch 的 0.9999 结果判断最终表现。续训耗时分别为 linear 376.1 分钟、cosine 390.7 分钟（新增约 150 epoch / 58,500 个有效更新）。
+
+以下网格均由对应 200-epoch checkpoint 的 EMA 权重生成；每张网格包含 64 个样本，seed 44，1,000 步 DDPM，并逐步裁剪预测的 $`x_0`$：
+
+<p align="center">
+<img src="results/schedule200_seed43/linear/samples_ema_0999/grid.png" width="32%" alt="Linear EMA 0.999 sample grid" />
+<img src="results/schedule200_seed43/linear/samples_ema_09995/grid.png" width="32%" alt="Linear EMA 0.9995 sample grid" />
+<img src="results/schedule200_seed43/linear/samples_ema_09999/grid.png" width="32%" alt="Linear EMA 0.9999 sample grid" />
+</p>
+<p align="center"><em>图 5　seed43、Linear schedule、200 epoch：EMA 0.999 / 0.9995 / 0.9999 样本网格</em></p>
+
+<p align="center">
+<img src="results/schedule200_seed43/cosine/samples_ema_0999/grid.png" width="32%" alt="Cosine EMA 0.999 sample grid" />
+<img src="results/schedule200_seed43/cosine/samples_ema_09995/grid.png" width="32%" alt="Cosine EMA 0.9995 sample grid" />
+<img src="results/schedule200_seed43/cosine/samples_ema_09999/grid.png" width="32%" alt="Cosine EMA 0.9999 sample grid" />
+</p>
+<p align="center"><em>图 6　seed43、Cosine schedule、200 epoch：EMA 0.999 / 0.9995 / 0.9999 样本网格</em></p>
 
 ## 六、改进实验
 
@@ -287,6 +329,10 @@ seed46 = 15.2086
    sampling 误差仍可能限制最后约半个 FID。
 5. **EMA 只能降低参数噪声，不能修正系统误差。** EMA 显著优于 raw，但不同 decay
    的最优点会随训练轨迹变化，EMA 不是一个可以固定解决所有问题的独立变量。
+6. **训练预算会改变 EMA 的可用性与 schedule 排名。** 三 seed 的 50-epoch 对照中，
+   EMA 0.9999 的 FID 对两种 schedule 都异常高；seed43 延长至 200 epoch 后，
+   同一 decay 降至 16.3553（cosine）和 18.9244（linear）。这与高 decay 对近期参数
+   变化响应较慢相符，但单 seed 续训不能证明所有配置都会如此。
 
 ### 为什么早期 linear 比 cosine 好，后来却是 cosine 更好
 
@@ -294,8 +340,13 @@ seed46 = 15.2086
 
 - 初始挑战矩阵使用的模型和采样路径在 cosine 末端没有处理好 $`x_0`$ 爆炸，因此
   cosine 均值为 137.5132；
+- 后续完整 U-Net 的三 seed、50-epoch 对照已经补齐：在 EMA 0.999 / 0.9995 下，
+  cosine 均值分别为 23.9276 / 24.3862，低于 linear 的 28.9522 / 29.3787；两者的
+  EMA 0.9999 都因训练预算过短而异常；
 - v2 使用完整 U-Net、明确的逐步 $`x_0`$ clipping 和采样诊断后，cosine 降到 16.1686，
  继续优化到 R5 达到 15.4385；
+- 本次同一 seed43 的 50→200 epoch schedule-specific 续训中，cosine 在三档 EMA
+  都低于 linear（最佳分别为 15.5792 与 18.3699），但只有一个训练 seed，且仍未达 FID 15；
 - schedule 优劣依赖模型、loss、采样端点、EMA 和训练预算，不能脱离这些条件说 linear 或 cosine 永远更好。
 
 ## 十、补充文件说明
@@ -313,6 +364,7 @@ seed46 = 15.2086
 - results/fid15_r7_v_prediction/：R7；
 - results/lr_screen_30ep/、results/lr_screen_50ep/：学习率筛选；
 - results/fid15_lr5e5_full/、results/lr25_200ep/：两组完整学习率复核；
+- results/schedule200_seed43/：两种 schedule 的 50→200 epoch 续训配置、FID 指标、评估/采样日志、六张样本网格、环境与 checkpoint 校验和；
 - 各结果目录中的 .txt、.csv、.png、.yaml 保留原始数值、曲线、样本网格和实际配置。
 
 ### 10.2 GitHub Release 大文件
@@ -329,6 +381,14 @@ seed46 = 15.2086
 - lr5e5_full_200ep_final.pt
 - lr25_200ep_final.pt
 - 30/50 epoch 学习率筛选 checkpoint、MNIST 临时产物和中间样本压缩包
+
+本次 seed43 schedule 50→200 epoch 续训的两份精确 epoch-200 checkpoint 与复现包，另存于
+[schedule200-seed43-v1 Release](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule200-seed43-v1)。该 Release 附带 SHA-256 清单；仓库内保留小型配置、日志、FID 文本、loss history 和样本网格，不包含数据集或模型权重。
+
+三 seed、50 epoch schedule 对照的 checkpoint 和复现包分别存于
+[seed42](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed42-v1)、
+[seed43](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed43-v1) 和
+[seed44](https://github.com/li-cheng111/my-diffusion-models-starter/releases/tag/schedule50-seed44-v1) Releases。
 
 ## 十一、自查问题（逐题回答）
 
@@ -392,11 +452,11 @@ x_t=\sqrt{\bar{\alpha}_t}x_0+\sqrt{1-\bar{\alpha}_t}\epsilon,
 
 ### 7. Schedule：linear 和 cosine 在 50 epoch 时哪个更好？200 epoch 时呢？
 
-当前已完成的严格 schedule 对照是 200 epoch 初始挑战矩阵：linear 的 EMA 平均 FID 为 `19.2926 ± 0.3357`，cosine 为 `137.5132 ± 8.0166`。在这组原始实现和原始采样路径下，linear 明显更好；cosine 的末端极小 $`\bar{\alpha}_t`$ 放大了 $`\hat{x}_0`$ 误差，导致采样异常。
+完整 U-Net 的三训练 seed、50-epoch 对照显示，EMA 0.999 / 0.9995 下 cosine 的平均 FID（`23.9276 / 24.3862`）低于 linear（`28.9522 / 29.3787`）。EMA 0.9999 下两种 schedule 都出现严重退化（cosine `152.3518 ± 8.7018`，linear `189.3650 ± 72.2358`），所以该短预算下不能把 0.9999 作为可靠比较点。
 
-本报告目前**没有严格完成的 50 epoch、相同模型/学习率/seed、仅改变 linear/cosine schedule 的对照数据**，因此不能据现有结果声称 50 epoch 时哪一个更好。已有的 50 epoch 记录是 `LR=2.5e-4` 的学习率实验，不是 linear-vs-cosine schedule 实验，必须单独标注，不能混用。
+在 seed43 的 schedule-specific checkpoint 上分别续训至 200 epoch 后，cosine 在三档 EMA 下都优于 linear：`15.9393 / 15.5792 / 16.3553` 对 `18.9129 / 18.3699 / 18.9244`。最佳 cosine 仍为 `15.5792`，没有达到 FID ≤ 15。该续训对照只有一个训练 seed，属于配对实测而不是三 seed 统计结果。
 
-在改进后的完整 U-Net、逐步裁剪 $`x_0`$ 和诊断路径下，200 epoch 的结论发生改变：R1 linear 的最佳 EMA FID 为 `18.5210`，R3 cosine 的最佳 EMA FID 为 `15.5340`，R5 cosine 进一步达到 `15.4385`。这说明 schedule 的效果依赖网络、loss、采样端点处理、EMA 和训练预算；后续补充 50 epoch 严格对照后，才可以回答“50 epoch 时哪个更好”的经验问题。
+这与初始挑战矩阵（基础 U-Net、cosine 末端未正确裁剪，linear `19.2926 ± 0.3357`、cosine `137.5132 ± 8.0166`）看似相反，根因是比较条件不同：网络与 skip 结构、端点裁剪、训练阶段/预算以及 EMA 状态都改变了。结论不是“cosine 永远更好”，而是必须固定这些因素，并对足够训练预算下的最终生成结果进行对照。
 
 ## 十二、我学到的最有价值的一件事
 
